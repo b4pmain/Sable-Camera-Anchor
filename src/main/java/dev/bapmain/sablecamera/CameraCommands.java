@@ -3,6 +3,7 @@ package dev.bapmain.sablecamera;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.entity.ModEntities;
 import net.minecraft.commands.CommandSourceStack;
@@ -20,10 +21,10 @@ import org.jetbrains.annotations.Nullable;
 public class CameraCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(Commands.literal("cameranchor")
+        dispatcher.register(Commands.literal("camanchor")
                 .requires(s -> s.hasPermission(2))
 
-                .then(Commands.literal("spawn")
+                .then(Commands.literal("addcam")
                         .then(Commands.argument("tag", StringArgumentType.string())
                                 .executes(ctx -> {
                                     ServerPlayer player = ctx.getSource().getPlayerOrException();
@@ -61,24 +62,31 @@ public class CameraCommands {
                         )
                 )
 
-                .then(Commands.literal("kill")
+                .then(Commands.literal("delcam")
                         .executes(ctx -> kill(ctx.getSource(), null))
                         .then(Commands.argument("tag", StringArgumentType.word())
                                 .executes(ctx -> kill(ctx.getSource(),
                                         StringArgumentType.getString(ctx, "tag")))))
 
-                .then(Commands.literal("pose")
+                .then(Commands.literal("angle")
                         .then(Commands.argument("pitch", FloatArgumentType.floatArg())
                                 .then(Commands.argument("yaw", FloatArgumentType.floatArg())
-                                        .executes(ctx -> pose(ctx.getSource(),
+                                        .executes(ctx -> setAngle(ctx,
                                                 FloatArgumentType.getFloat(ctx, "pitch"),
-                                                FloatArgumentType.getFloat(ctx, "yaw"),
+                                                FloatArgumentType.getFloat(ctx, "yaw"), 0.0,
                                                 null))
+                                        .then(Commands.argument("roll", DoubleArgumentType.doubleArg())
+                                                .executes(ctx -> setAngle(ctx,
+                                                        DoubleArgumentType.getDouble(ctx, "pitch"),
+                                                        DoubleArgumentType.getDouble(ctx, "yaw"),
+                                                        DoubleArgumentType.getDouble(ctx, "roll"),
+                                                        null))
                                         .then(Commands.argument("tag", StringArgumentType.word())
-                                                .executes(ctx -> pose(ctx.getSource(),
+                                                .executes(ctx -> setAngle(ctx,
                                                         FloatArgumentType.getFloat(ctx, "pitch"),
                                                         FloatArgumentType.getFloat(ctx, "yaw"),
-                                                        StringArgumentType.getString(ctx, "tag")))))))
+                                                        DoubleArgumentType.getDouble(ctx, "roll"),
+                                                        StringArgumentType.getString(ctx, "tag"))))))))
 
                 .then(Commands.literal("offset")
                         .then(Commands.argument("x", DoubleArgumentType.doubleArg())
@@ -145,23 +153,29 @@ public class CameraCommands {
         return count;
     }
 
-    private static int pose(CommandSourceStack source, float pitch, float yaw, String tag) {
-        ServerLevel level = source.getLevel();
+    private static int setAngle(CommandContext<CommandSourceStack> ctx,
+                                double pitch, double yaw, double roll,
+                                @Nullable String tag) {
+        CommandSourceStack source = ctx.getSource();
         int count = 0;
 
-        for (Entity e : level.getAllEntities()) {
-            if (e instanceof CameraAnchorEntity anchor) {
-                if (tag == null || e.getTags().contains(tag)) {
-                    anchor.setLocalPose(pitch, yaw);
-                    anchor.setYRot(yaw);
-                    anchor.setXRot(pitch);
+        for (Entity entity : source.getLevel().getEntities().getAll()) {
+            if (entity instanceof CameraAnchorEntity anchor) {
+                if (tag == null || anchor.getTags().contains(tag)) {
+                    anchor.setLocalPose((float) pitch, (float) yaw, (float) roll);
                     count++;
                 }
             }
         }
 
-        int finalCount = count;
-        source.sendSuccess(() -> Component.literal("Updated pose on " + finalCount + " camera(s)"), true);
+        if (count == 0) {
+            source.sendFailure(Component.literal("No matching cameras found"));
+            return 0;
+        }
+
+        String msg = String.format("Set angle pitch=%.1f yaw=%.1f roll=%.1f on %d camera(s)",
+                pitch, yaw, roll, count);
+        source.sendSuccess(() -> Component.literal(msg), true);
         return count;
     }
 

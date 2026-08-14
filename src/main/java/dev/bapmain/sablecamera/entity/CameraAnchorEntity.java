@@ -38,6 +38,8 @@ public class CameraAnchorEntity extends Entity {
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_LOCAL_YAW =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOCAL_ROLL =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
 
     public CameraAnchorEntity(EntityType<? extends CameraAnchorEntity> type, Level level) {
         super(type, level);
@@ -58,6 +60,7 @@ public class CameraAnchorEntity extends Entity {
         builder.define(DATA_OFFSET_Z, 0.0f);
         builder.define(DATA_LOCAL_PITCH, 0.0f);
         builder.define(DATA_LOCAL_YAW, 0.0f);
+        builder.define(DATA_LOCAL_ROLL, 0.0f);
     }
 
     // ===== Public getters (used by the client mixin) =====
@@ -95,9 +98,14 @@ public class CameraAnchorEntity extends Entity {
         return this.entityData.get(DATA_LOCAL_YAW);
     }
 
-    public void setLocalPose(float pitch, float yaw) {
+    public float getLocalRoll() {
+        return this.entityData.get(DATA_LOCAL_ROLL);
+    }
+
+    public void setLocalPose(float pitch, float yaw, float roll) {
         this.entityData.set(DATA_LOCAL_PITCH, pitch);
         this.entityData.set(DATA_LOCAL_YAW, yaw);
+        this.entityData.set(DATA_LOCAL_ROLL, roll);
     }
 
     public float getOffsetX() {
@@ -139,7 +147,7 @@ public class CameraAnchorEntity extends Entity {
         this.entityData.set(DATA_LOCAL_Y, (float) localPos.y);
         this.entityData.set(DATA_LOCAL_Z, (float) localPos.z);
 
-        this.setLocalPose(this.getXRot(), this.getYRot());
+        this.setLocalPose(this.getXRot(), this.getYRot(), this.getLocalRoll());
     }
 
     @Override
@@ -162,7 +170,7 @@ public class CameraAnchorEntity extends Entity {
             this.entityData.set(DATA_LOCAL_Z, tag.getFloat("LocalZ"));
         }
         if (tag.contains("LocalPitch")) {
-            this.setLocalPose(tag.getFloat("LocalPitch"), tag.getFloat("LocalYaw"));
+            this.setLocalPose(tag.getFloat("LocalPitch"), tag.getFloat("LocalYaw"), tag.getFloat("LocalRoll"));
         }
     }
 
@@ -177,6 +185,7 @@ public class CameraAnchorEntity extends Entity {
         tag.putFloat("LocalZ", getLocalZ());
         tag.putFloat("LocalPitch", getLocalPitch());
         tag.putFloat("LocalYaw", getLocalYaw());
+        tag.putFloat("LocalRoll", getLocalRoll());
     }
 
     @Override

@@ -85,7 +85,8 @@ public abstract class CameraMixin {
 
         Quaterniond localCam = new Quaterniond()
                 .rotateY(Math.toRadians(-anchor.getLocalYaw()))
-                .rotateX(Math.toRadians(anchor.getLocalPitch()));
+                .rotateX(Math.toRadians(anchor.getLocalPitch()))
+                .rotateZ(Math.toRadians(anchor.getLocalRoll()));
 
         Quaterniond worldRot = new Quaterniond(shipRot).mul(localCam);
 
