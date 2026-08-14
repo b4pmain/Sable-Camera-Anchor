@@ -18,12 +18,14 @@ import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import net.minecraft.client.Minecraft;
 import java.util.UUID;
+import org.joml.Quaterniond;
+import org.joml.Quaterniondc;
 
 @Mixin(Camera.class)
 public abstract class CameraMixin {
 
     @Shadow protected abstract void setPosition(double x, double y, double z);
-    @Shadow protected abstract void setRotation(float yRot, float xRot);
+    @Shadow protected abstract void setRotation(float yRot, float xRot, float roll);
 
     @Inject(method = "setup", at = @At("TAIL"))
     private void sablecamera$overrideForAnchor(BlockGetter level, Entity entity, boolean detached, boolean thirdPersonReverse, float partialTick, CallbackInfo ci) {
@@ -77,22 +79,67 @@ public abstract class CameraMixin {
 
         this.setPosition(x, y, z);
 
-        // Orientation (optional for now)
-        float yawRad = anchor.getLocalYaw() * ((float) Math.PI / 180.0f);
-        float pitchRad = anchor.getLocalPitch() * ((float) Math.PI / 180.0f);
+        // ===== Orientation (look vector + up vector) =====
 
-        double lx = -Math.sin(yawRad) * Math.cos(pitchRad);
-        double ly = -Math.sin(pitchRad);
-        double lz =  Math.cos(yawRad) * Math.cos(pitchRad);
+        Quaterniondc shipRot = pose.orientation();
 
-        Vector3d localLook = new Vector3d(lx, ly, lz);
-        pose.transformNormal(localLook);
+        Quaterniond localCam = new Quaterniond()
+                .rotateY(Math.toRadians(-anchor.getLocalYaw()))
+                .rotateX(Math.toRadians(anchor.getLocalPitch()));
 
-        double horizontal = Math.sqrt(localLook.x * localLook.x + localLook.z * localLook.z);
-        float worldYaw = (float) (Mth.atan2(-localLook.x, localLook.z) * (180.0 / Math.PI));
-        float worldPitch = (float) (Mth.atan2(-localLook.y, horizontal) * (180.0 / Math.PI));
+        Quaterniond worldRot = new Quaterniond(shipRot).mul(localCam);
 
-        this.setRotation(worldYaw, worldPitch);
+        Vector3d forward = new Vector3d(0.0, 0.0, 1.0);
+        Vector3d up      = new Vector3d(0.0, 1.0, 0.0);
+
+        worldRot.transform(forward);
+        worldRot.transform(up);
+
+        double horizontal = Math.sqrt(forward.x * forward.x + forward.z * forward.z);
+
+        float yaw = (float) Math.toDegrees(Math.atan2(-forward.x, forward.z));
+
+        float pitch;
+        if (horizontal < 1.0e-5) {
+            // Nearly vertical – keep previous pitch, avoid noisy atan2
+            pitch = lastPitch;
+        } else {
+            pitch = (float) Math.toDegrees(Math.atan2(-forward.y, horizontal));
+        }
+
+// Roll
+        Vector3d worldUp = new Vector3d(0.0, 1.0, 0.0);
+        Vector3d right = new Vector3d();
+        forward.cross(worldUp, right);
+
+        float roll;
+        if (right.lengthSquared() < 1.0e-4) {
+            roll = lastRoll;
+        } else {
+            right.normalize();
+            Vector3d expectedUp = new Vector3d();
+            right.cross(forward, expectedUp);
+            expectedUp.normalize();
+
+            double dot = expectedUp.dot(up);
+            double det = right.dot(up);
+            roll = (float) Math.toDegrees(Math.atan2(det, dot));
+        }
+
+// ----- Unwrap all three axes -----
+        yaw   = unwrap(yaw,   lastYaw);
+        pitch = unwrap(pitch, lastPitch);
+        roll  = unwrap(roll,  lastRoll);
+
+        yaw   = lastYaw   + (yaw   - lastYaw)   * 0.7f;
+        pitch = lastPitch + (pitch - lastPitch) * 0.25f;  // stronger smoothing
+        roll  = lastRoll  + (roll  - lastRoll)  * 0.7f;
+
+        lastYaw = yaw;
+        lastPitch = pitch;
+        lastRoll = roll;
+
+        this.setRotation(yaw, pitch, roll);
 
         System.out.println("[SableCamera] Transform applied → " + localPos.x + ", " + localPos.y + ", " + localPos.z);
     }
@@ -112,5 +159,16 @@ public abstract class CameraMixin {
             }
         }
         return null;
+    }
+
+    private static float lastYaw = 0.0f;
+    private static float lastPitch = 0.0f;
+    private static float lastRoll = 0.0f;
+
+    private static float unwrap(float current, float last) {
+        float delta = current - last;
+        while (delta > 180.0f)  delta -= 360.0f;
+        while (delta < -180.0f) delta += 360.0f;
+        return last + delta;
     }
 }
