@@ -1,0 +1,191 @@
+package dev.bapmain.sablecamera.entity;
+
+import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.sublevel.SubLevel;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+
+import javax.annotation.Nullable;
+import java.util.UUID;
+
+public class CameraAnchorEntity extends Entity {
+
+    // Synched data – these travel to the client
+    private static final EntityDataAccessor<String> DATA_SUBLEVEL_ID =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.STRING);
+
+    private static final EntityDataAccessor<Float> DATA_LOCAL_X =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOCAL_Y =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOCAL_Z =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    // New synched data
+    private static final EntityDataAccessor<Float> DATA_OFFSET_X =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_OFFSET_Y =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_OFFSET_Z =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+
+    private static final EntityDataAccessor<Float> DATA_LOCAL_PITCH =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOCAL_YAW =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+
+    public CameraAnchorEntity(EntityType<? extends CameraAnchorEntity> type, Level level) {
+        super(type, level);
+        this.noPhysics = true;
+        this.setNoGravity(true);
+        this.setInvulnerable(true);
+        this.setInvisible(true);
+    }
+
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(DATA_SUBLEVEL_ID, "");
+        builder.define(DATA_LOCAL_X, 0.0f);
+        builder.define(DATA_LOCAL_Y, 0.0f);
+        builder.define(DATA_LOCAL_Z, 0.0f);
+        builder.define(DATA_OFFSET_X, 0.0f);
+        builder.define(DATA_OFFSET_Y, 0.0f);
+        builder.define(DATA_OFFSET_Z, 0.0f);
+        builder.define(DATA_LOCAL_PITCH, 0.0f);
+        builder.define(DATA_LOCAL_YAW, 0.0f);
+    }
+
+    // ===== Public getters (used by the client mixin) =====
+
+    @Nullable
+    public UUID getAttachedSubLevelId() {
+        String id = this.entityData.get(DATA_SUBLEVEL_ID);
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(id);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    public float getLocalX() {
+        return this.entityData.get(DATA_LOCAL_X);
+    }
+
+    public float getLocalY() {
+        return this.entityData.get(DATA_LOCAL_Y);
+    }
+
+    public float getLocalZ() {
+        return this.entityData.get(DATA_LOCAL_Z);
+    }
+
+    public float getLocalPitch() {
+        return this.entityData.get(DATA_LOCAL_PITCH);
+    }
+
+    public float getLocalYaw() {
+        return this.entityData.get(DATA_LOCAL_YAW);
+    }
+
+    public void setLocalPose(float pitch, float yaw) {
+        this.entityData.set(DATA_LOCAL_PITCH, pitch);
+        this.entityData.set(DATA_LOCAL_YAW, yaw);
+    }
+
+    public float getOffsetX() {
+        return this.entityData.get(DATA_OFFSET_X);
+    }
+    public float getOffsetY() {
+        return this.entityData.get(DATA_OFFSET_Y);
+    }
+    public float getOffsetZ() {
+        return this.entityData.get(DATA_OFFSET_Z);
+    }
+
+    public void setOffset(float x, float y, float z) {
+        this.entityData.set(DATA_OFFSET_X, x);
+        this.entityData.set(DATA_OFFSET_Y, y);
+        this.entityData.set(DATA_OFFSET_Z, z);
+    }
+
+    // ===== Attachment =====
+
+    public void tryAttachToPlayerTracking(Entity player) {
+        SubLevel subLevel = Sable.HELPER.getTrackingSubLevel(player);
+        if (subLevel != null) {
+            attachToSubLevel(subLevel);
+        }
+    }
+
+    public void attachToSubLevel(SubLevel subLevel) {
+        this.entityData.set(DATA_SUBLEVEL_ID, subLevel.getUniqueId().toString());
+
+        Vec3 worldPos = this.position();
+        System.out.println("[SableCamera] attach worldPos = " + worldPos);
+
+        Vec3 localPos = subLevel.logicalPose().transformPositionInverse(worldPos);
+        System.out.println("[SableCamera] transformPositionInverse result = " + localPos);
+
+        // Temporarily accept whatever we get (even if huge) so we can inspect it
+        this.entityData.set(DATA_LOCAL_X, (float) localPos.x);
+        this.entityData.set(DATA_LOCAL_Y, (float) localPos.y);
+        this.entityData.set(DATA_LOCAL_Z, (float) localPos.z);
+
+        this.setLocalPose(this.getXRot(), this.getYRot());
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        this.setDeltaMovement(0, 0, 0);
+        // No heavy server-side transform – the client mixin handles the smooth camera
+    }
+
+    // ===== NBT (for world save / reload) =====
+
+    @Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        if (tag.contains("SubLevelId")) {
+            this.entityData.set(DATA_SUBLEVEL_ID, tag.getString("SubLevelId"));
+        }
+        if (tag.contains("LocalX")) {
+            this.entityData.set(DATA_LOCAL_X, tag.getFloat("LocalX"));
+            this.entityData.set(DATA_LOCAL_Y, tag.getFloat("LocalY"));
+            this.entityData.set(DATA_LOCAL_Z, tag.getFloat("LocalZ"));
+        }
+        if (tag.contains("LocalPitch")) {
+            this.setLocalPose(tag.getFloat("LocalPitch"), tag.getFloat("LocalYaw"));
+        }
+    }
+
+    @Override
+    protected void addAdditionalSaveData(CompoundTag tag) {
+        String id = this.entityData.get(DATA_SUBLEVEL_ID);
+        if (id != null && !id.isEmpty()) {
+            tag.putString("SubLevelId", id);
+        }
+        tag.putFloat("LocalX", getLocalX());
+        tag.putFloat("LocalY", getLocalY());
+        tag.putFloat("LocalZ", getLocalZ());
+        tag.putFloat("LocalPitch", getLocalPitch());
+        tag.putFloat("LocalYaw", getLocalYaw());
+    }
+
+    @Override
+    public boolean isPickable() {
+        return false;
+    }
+
+    @Override
+    public boolean canBeCollidedWith() {
+        return false;
+    }
+}

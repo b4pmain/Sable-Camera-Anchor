@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "dev.bapmain.sablecamera.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "CameraMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

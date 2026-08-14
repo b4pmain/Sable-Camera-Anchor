@@ -1,25 +1,54 @@
+# Sable Camera Anchor
 
-Installation information
-=======
+Minimal camera system for **Sable / Create Aeronautics**.
 
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+## Features
 
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
+- Custom `CameraAnchor` entity that can be spectated
+- Custom tags for easy identification and switching
+- Tiltable head (pitch + yaw)
+- Attempts to attach to the Sable sub-level you are standing on when spawned
+- Easy spawn / kill / pose commands
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
+## Commands
 
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
+All commands require permission level 2.
 
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
+```mcfunction
+# Spawn a camera at your position with a tag
+/cameranchor spawn <tag>
+
+# Example
+/cameranchor spawn front
+/cameranchor spawn side
+/cameranchor spawn top
+
+# Set head pose (pitch, yaw) on cameras with a specific tag (or all if no tag)
+/cameranchor pose <pitch> <yaw> [tag]
+
+# Example – look 25° down
+/cameranchor pose 25 0 front
+
+# Kill cameras
+/cameranchor kill          # kills all
+/cameranchor kill front    # kills only tagged ones
+```
+
+## Spectating
+
+```mcfunction
+/spectate @e[type=sablecamera:camera_anchor,tag=front,limit=1]
+```
+
+## Notes
+
+- Spawn the camera **while standing on the assembled ship** so it can try to attach to the sub-level.
+- This is still an early version. Full quaternion-based orientation (including roll) will be added later.
+- The entity is invisible, has no gravity, and cannot be collided with.
+
+## Building
+
+Requires:
+- NeoForge 1.21.1 (21.1.x)
+- Sable 2.0.3+
+- Java 21
