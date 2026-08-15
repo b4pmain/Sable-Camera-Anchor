@@ -62,15 +62,17 @@ public abstract class CameraMixin {
         // Now we have a real pose – do the transform
         var pose = (dev.ryanhcode.sable.companion.math.Pose3dc) poseObj;  // cast to the real type
 
-        Vector3d localPos = new Vector3d(anchor.getLocalX(), anchor.getLocalY(), anchor.getLocalZ());
+        // Offset is applied in local space so it rotates with the ship
+        var rp = pose.rotationPoint();
+
+        Vector3d localPos = new Vector3d(
+                rp.x() + anchor.getLocalX() + anchor.getOffsetX(),
+                rp.y() + anchor.getLocalY() + anchor.getOffsetY(),
+                rp.z() + anchor.getLocalZ() + anchor.getOffsetZ()
+        );
+
         pose.transformPosition(localPos);
-
-        // Apply user offset (world-space after transform)
-        double x = localPos.x + anchor.getOffsetX();
-        double y = localPos.y + anchor.getOffsetY();
-        double z = localPos.z + anchor.getOffsetZ();
-
-        this.setPosition(x, y, z);
+        this.setPosition(localPos.x, localPos.y, localPos.z);
 
         // ===== Orientation (look vector + up vector) =====
 

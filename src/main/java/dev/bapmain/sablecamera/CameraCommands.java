@@ -1,20 +1,22 @@
 package dev.bapmain.sablecamera;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.entity.ModEntities;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.server.level.ServerPlayer;
-import dev.ryanhcode.sable.Sable;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.level.GameType;
@@ -27,47 +29,57 @@ public class CameraCommands {
 
                 .then(Commands.literal("addcam")
                         .then(Commands.argument("tag", StringArgumentType.string())
-                                .executes(ctx -> {
-                                    ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                    String tag = StringArgumentType.getString(ctx, "tag");
-
-                                    // ===== DEBUG START =====
-                                    System.out.println("[SableCamera] Spawning camera...");
-                                    System.out.println("[SableCamera] Player position: " + player.position());
-
-                                    var tracking = Sable.HELPER.getTrackingSubLevel(player);
-                                    System.out.println("[SableCamera] getTrackingSubLevel(player) → " + tracking);
-
-                                    if (tracking != null) {
-                                        System.out.println("[SableCamera] SubLevel UUID = " + tracking.getUniqueId());
-                                    } else {
-                                        System.out.println("[SableCamera] FAIL: player is not tracking any sub-level");
-                                    }
-                                    // ===== DEBUG END =====
-
-                                    // Create the entity (your existing code)
-                                    CameraAnchorEntity anchor = new CameraAnchorEntity(ModEntities.CAMERA_ANCHOR.get(), player.level());
-                                    anchor.setPos(player.getX(), player.getY(), player.getZ());
-                                    anchor.addTag(tag);
-
-                                    // Try to attach
-                                    anchor.tryAttachToPlayerTracking(player);
-
-                                    System.out.println("[SableCamera] After attach: attachedSubLevelId = " + anchor.getAttachedSubLevelId());
-
-                                    player.level().addFreshEntity(anchor);
-
-                                    ctx.getSource().sendSuccess(() -> Component.literal("Spawned camera with tag: " + tag), true);
-                                    return 1;
-                                })
+                                // no pos → player position
+                                .executes(ctx -> addCamera(
+                                        ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "tag"),
+                                        null))
+                                // with pos → grid on block under player
+                                .then(Commands.argument("pos", StringArgumentType.string())
+                                        .executes(ctx -> addCamera(
+                                                ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "tag"),
+                                                StringArgumentType.getString(ctx, "pos")))
+                                )
                         )
                 )
 
                 .then(Commands.literal("delcam")
-                        .executes(ctx -> kill(ctx.getSource(), null))
-                        .then(Commands.argument("tag", StringArgumentType.word())
-                                .executes(ctx -> kill(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "tag")))))
+                        // no args → error
+                        .executes(ctx -> {
+                            ctx.getSource().sendFailure(
+                                    Component.literal("Input a tag name first (use \"all\" to delete all)")
+                                            .withStyle(ChatFormatting.RED));
+                            return 0;
+                        })
+                        .then(Commands.argument("tag", StringArgumentType.string())
+                                .executes(ctx -> {
+                                    String tag = StringArgumentType.getString(ctx, "tag");
+                                    ServerLevel level = ctx.getSource().getLevel();
+                                    int count = 0;
+
+                                    for (Entity entity : level.getEntities().getAll()) {
+                                        if (entity instanceof CameraAnchorEntity anchor) {
+                                            if (tag.equalsIgnoreCase("all") || anchor.getTags().contains(tag)) {
+                                                anchor.discard();
+                                                count++;
+                                            }
+                                        }
+                                    }
+
+                                    if (count == 0) {
+                                        ctx.getSource().sendFailure(Component.literal("No cameras matched '" + tag + "'")
+                                                .withStyle(ChatFormatting.RED));
+                                        return 0;
+                                    }
+
+                                    int finalCount = count;
+                                    ctx.getSource().sendSuccess(() ->
+                                            Component.literal("Deleted " + finalCount + " camera(s)"), true);
+                                    return finalCount;
+                                })
+                        )
+                )
 
                 .then(Commands.literal("angle")
                         .then(Commands.argument("pitch", FloatArgumentType.floatArg())
@@ -117,46 +129,97 @@ public class CameraCommands {
                                 .executes(ctx -> viewCamera(ctx.getSource(), StringArgumentType.getString(ctx, "tag")))
                         )
                 )
+                .then(Commands.literal("list")
+                        .executes(ctx -> {
+                            ServerLevel level = ctx.getSource().getLevel();
+                            java.util.Set<String> tags = new java.util.LinkedHashSet<>();
+
+                            for (Entity entity : level.getEntities().getAll()) {
+                                if (entity instanceof CameraAnchorEntity anchor) {
+                                    for (String t : anchor.getTags()) {
+                                        if (!t.equals("sable_camera")) {
+                                            tags.add(t);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (tags.isEmpty()) {
+                                ctx.getSource().sendSuccess(() ->
+                                        Component.literal("No cameras found").withStyle(ChatFormatting.GRAY), false);
+                            } else {
+                                ctx.getSource().sendSuccess(() ->
+                                        Component.literal("Cameras: " + String.join(", ", tags))
+                                                .withStyle(ChatFormatting.AQUA), false);
+                            }
+                            return tags.size();
+                        })
+                )
+                .then(Commands.literal("show")
+                        .then(Commands.argument("value", BoolArgumentType.bool())
+                                .executes(ctx -> {
+                                    boolean value = BoolArgumentType.getBool(ctx, "value");
+                                    ServerLevel level = ctx.getSource().getLevel();
+                                    int count = 0;
+
+                                    for (Entity entity : level.getEntities().getAll()) {
+                                        if (entity instanceof CameraAnchorEntity anchor) {
+                                            anchor.setCameraVisible(value);
+                                            count++;
+                                        }
+                                    }
+
+                                    int finalCount = count;
+                                    ctx.getSource().sendSuccess(() -> Component.literal(
+                                            (value ? "Showing" : "Hiding") + " " + finalCount + " camera(s)"
+                                    ), true);
+                                    return finalCount;
+                                })
+                        )
+                )
         );
     }
 
-    private static int spawn(CommandSourceStack source, String tag) {
-        ServerLevel level = source.getLevel();
-        Vec3 pos = source.getPosition();
+    private static int addCamera(CommandSourceStack source, String tag, @Nullable String pos)
+            throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        ServerLevel level = player.serverLevel();
 
-        CameraAnchorEntity anchor = ModEntities.CAMERA_ANCHOR.get().create(level);
-        if (anchor == null) return 0;
-
-        anchor.moveTo(pos.x, pos.y, pos.z, source.getRotation().y, source.getRotation().x);
-        anchor.addTag(tag);
-        anchor.addTag("sable_camera");
-
-        // Try to attach to the sub-level the command source is currently on
-        if (source.getEntity() != null) {
-            anchor.tryAttachToPlayerTracking(source.getEntity());
-        }
-
-        level.addFreshEntity(anchor);
-        source.sendSuccess(() -> Component.literal("Spawned camera anchor with tag: " + tag), true);
-        return 1;
-    }
-
-    private static int kill(CommandSourceStack source, String tag) {
-        ServerLevel level = source.getLevel();
-        int count = 0;
-
-        for (Entity e : level.getAllEntities()) {
-            if (e instanceof CameraAnchorEntity) {
-                if (tag == null || e.getTags().contains(tag)) {
-                    e.discard();
-                    count++;
-                }
+        for (Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof CameraAnchorEntity anchor && anchor.getTags().contains(tag)) {
+                source.sendFailure(Component.literal("A camera with tag '" + tag + "' already exists")
+                        .withStyle(ChatFormatting.RED));
+                return 0;
             }
         }
 
-        int finalCount = count;
-        source.sendSuccess(() -> Component.literal("Removed " + finalCount + " camera anchor(s)"), true);
-        return count;
+        double x, y, z;
+
+        if (pos == null) {
+            // Exact player position (where they are standing)
+            x = player.getX();
+            y = player.getY();
+            z = player.getZ();
+        } else {
+            // Grid placement on the block under the player
+            BlockPos feet = player.blockPosition().below();
+            Vec3 offset = getPlacementOffset(pos);
+            x = feet.getX() + offset.x;
+            y = feet.getY() + offset.y;
+            z = feet.getZ() + offset.z;
+        }
+
+        CameraAnchorEntity anchor = new CameraAnchorEntity(ModEntities.CAMERA_ANCHOR.get(), level);
+        anchor.setPos(x, y, z);
+        anchor.addTag(tag);
+        anchor.tryAttachToPlayerTracking(player);
+        level.addFreshEntity(anchor);
+
+        String where = (pos == null) ? "player position" : pos;
+        source.sendSuccess(() -> Component.literal(
+                "Added camera '" + tag + "' at " + where
+        ), true);
+        return 1;
     }
 
     private static int setAngle(CommandContext<CommandSourceStack> ctx,
@@ -214,7 +277,6 @@ public class CameraCommands {
         ServerLevel level = source.getLevel();
 
         CameraAnchorEntity target = null;
-
         for (Entity entity : level.getEntities().getAll()) {
             if (entity instanceof CameraAnchorEntity anchor && anchor.getTags().contains(tag)) {
                 target = anchor;
@@ -223,19 +285,60 @@ public class CameraCommands {
         }
 
         if (target == null) {
-            source.sendFailure(Component.literal("No camera found with tag: " + tag));
+            source.sendFailure(Component.literal("No camera found with tag: " + tag)
+                    .withStyle(ChatFormatting.RED));
             return 0;
         }
 
-        // Switch to spectator only if needed
+        // Save current state before switching
+        VIEW_SESSIONS.put(player.getUUID(), new ViewState(player));
+
         if (player.gameMode.getGameModeForPlayer() != GameType.SPECTATOR) {
             player.setGameMode(GameType.SPECTATOR);
         }
 
-        // Spectate the camera
         player.setCamera(target);
 
-        source.sendSuccess(() -> Component.literal("Now viewing camera: " + tag), true);
+        source.sendSuccess(() -> Component.literal("Viewing camera: " + tag + " (crouch to exit)"), true);
         return 1;
     }
+
+    private static final java.util.Map<java.util.UUID, ViewState> VIEW_SESSIONS = new java.util.HashMap<>();
+
+    protected static class ViewState {
+        final GameType gameMode;
+        final double x, y, z;
+        final float yRot, xRot;
+
+        ViewState(ServerPlayer player) {
+            this.gameMode = player.gameMode.getGameModeForPlayer();
+            this.x = player.getX();
+            this.y = player.getY();
+            this.z = player.getZ();
+            this.yRot = player.getYRot();
+            this.xRot = player.getXRot();
+        }
+    }
+
+    static java.util.Map<java.util.UUID, ViewState> getViewSessions() {
+        return VIEW_SESSIONS;
+    }
+
+    private static Vec3 getPlacementOffset(String pos) {
+        double x, z;
+        switch (pos.toLowerCase()) {
+            case "topleft"      -> { x = 0.25; z = 0.25; }
+            case "topcenter"    -> { x = 0.50; z = 0.25; }
+            case "topright"     -> { x = 0.75; z = 0.25; }
+            case "centerleft"   -> { x = 0.25; z = 0.50; }
+            case "center"       -> { x = 0.50; z = 0.50; }
+            case "centerright"  -> { x = 0.75; z = 0.50; }
+            case "bottomleft"   -> { x = 0.25; z = 0.75; }
+            case "bottomcenter" -> { x = 0.50; z = 0.75; }
+            case "bottomright"  -> { x = 0.75; z = 0.75; }
+            default             -> { x = 0.50; z = 0.50; }
+        }
+        return new Vec3(x, 1.0, z);
+    }
+
 }

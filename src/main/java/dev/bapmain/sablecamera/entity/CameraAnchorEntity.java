@@ -40,6 +40,8 @@ public class CameraAnchorEntity extends Entity {
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_LOCAL_ROLL =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Boolean> DATA_VISIBLE =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.BOOLEAN);
 
     public CameraAnchorEntity(EntityType<? extends CameraAnchorEntity> type, Level level) {
         super(type, level);
@@ -61,6 +63,7 @@ public class CameraAnchorEntity extends Entity {
         builder.define(DATA_LOCAL_PITCH, 0.0f);
         builder.define(DATA_LOCAL_YAW, 0.0f);
         builder.define(DATA_LOCAL_ROLL, 0.0f);
+        builder.define(DATA_VISIBLE, false);
     }
 
     // ===== Public getters (used by the client mixin) =====
@@ -137,15 +140,13 @@ public class CameraAnchorEntity extends Entity {
         this.entityData.set(DATA_SUBLEVEL_ID, subLevel.getUniqueId().toString());
 
         Vec3 worldPos = this.position();
-        System.out.println("[SableCamera] attach worldPos = " + worldPos);
-
         Vec3 localPos = subLevel.logicalPose().transformPositionInverse(worldPos);
-        System.out.println("[SableCamera] transformPositionInverse result = " + localPos);
 
-        // Temporarily accept whatever we get (even if huge) so we can inspect it
-        this.entityData.set(DATA_LOCAL_X, (float) localPos.x);
-        this.entityData.set(DATA_LOCAL_Y, (float) localPos.y);
-        this.entityData.set(DATA_LOCAL_Z, (float) localPos.z);
+        // Store relative to rotation point (small numbers, float-safe)
+        var rp = subLevel.logicalPose().rotationPoint();
+        this.entityData.set(DATA_LOCAL_X, (float) (localPos.x - rp.x()));
+        this.entityData.set(DATA_LOCAL_Y, (float) (localPos.y - rp.y()));
+        this.entityData.set(DATA_LOCAL_Z, (float) (localPos.z - rp.z()));
 
         this.setLocalPose(this.getXRot(), this.getYRot(), this.getLocalRoll());
     }
@@ -196,5 +197,13 @@ public class CameraAnchorEntity extends Entity {
     @Override
     public boolean canBeCollidedWith() {
         return false;
+    }
+
+    public boolean isCameraVisible() {
+        return this.entityData.get(DATA_VISIBLE);
+    }
+
+    public void setCameraVisible(boolean visible) {
+        this.entityData.set(DATA_VISIBLE, visible);
     }
 }

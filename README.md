@@ -1,54 +1,91 @@
 # Sable Camera Anchor
 
-Minimal camera system for **Sable / Create Aeronautics**.
+Minimal camera system for **Sable / Create Aeronautics** (NeoForge 1.21.1).
 
-## Features
+Spawn invisible camera anchors on assembled ships, set their local angle (pitch / yaw / roll), offset them in ship space, and spectate them with a short command. Cameras track the sub-level in position and orientation using Sable’s client-side interpolated pose.
 
-- Custom `CameraAnchor` entity that can be spectated
-- Custom tags for easy identification and switching
-- Tiltable head (pitch + yaw)
-- Attempts to attach to the Sable sub-level you are standing on when spawned
-- Easy spawn / kill / pose commands
+---
+
+## Requirements
+
+- Minecraft 1.21.1
+- NeoForge 21.1.x
+- Sable 2.0.3+
+- Java 21
+
+---
+
+## Permission level
+
+**All commands require operator permission level 2.**
+
+This is intentional. The mod:
+
+- Switches the player to spectator mode
+- Calls the internal spectate / camera API
+- Can restore gamemode and teleport the player back
+
+Those actions are admin-grade. Non-operators cannot use any `/cameranchor` command.
+
+---
 
 ## Commands
 
-All commands require permission level 2.
+| Command | Description |
+|---------|-------------|
+| `/cameranchor addcam <tag>` | Spawn a camera at your position and attach it to the sub-level you are standing on |
+| `/cameranchor addcam <tag> <pos>` | Spawn on the block under you at a grid point (`center`, `topleft`, `bottomright`, …) |
+| `/cameranchor delcam <tag>` | Delete the camera with that tag |
+| `/cameranchor delcam all` | Delete every camera |
+| `/cameranchor angle <pitch> <yaw> [roll] [tag]` | Set local look angles (degrees). Optional roll and tag |
+| `/cameranchor offset <x> <y> <z> [tag]` | Local-space offset (moves with the ship) |
+| `/cameranchor view <tag>` | Save your gamemode + position, switch to spectator if needed, spectate that camera |
+| `/cameranchor viewall` | List all camera tags in the world |
+| `/cameranchor show true\|false` | Toggle cyan box + look cone debug visuals |
 
-```mcfunction
-# Spawn a camera at your position with a tag
-/cameranchor spawn <tag>
+### Placement grid (`addcam … <pos>`)
 
-# Example
-/cameranchor spawn front
-/cameranchor spawn side
-/cameranchor spawn top
+Looking north (3x3 grid):
 
-# Set head pose (pitch, yaw) on cameras with a specific tag (or all if no tag)
-/cameranchor pose <pitch> <yaw> [tag]
-
-# Example – look 25° down
-/cameranchor pose 25 0 front
-
-# Kill cameras
-/cameranchor kill          # kills all
-/cameranchor kill front    # kills only tagged ones
+```
+topleft     topcenter     topright
+centerleft  center        centerright
+bottomleft  bottomcenter  bottomright
 ```
 
-## Spectating
+Omit `<pos>` to use your exact standing position.
+
+---
+
+## Typical workflow
+
+1. Stand on an **assembled** ship.
+2. `/cameranchor addcam front center`
+3. `/cameranchor angle 10 0 0 front`
+4. `/cameranchor offset 0 1.5 0 front` (optional, ship-local)
+5. `/cameranchor view front`
+6. Crouch to exit — you return to your previous gamemode and position.
+
+Debug layout:
 
 ```mcfunction
-/spectate @e[type=sablecamera:camera_anchor,tag=front,limit=1]
+/cameranchor show true
 ```
 
-## Notes
+---
 
-- Spawn the camera **while standing on the assembled ship** so it can try to attach to the sub-level.
-- This is still an early version. Full quaternion-based orientation (including roll) will be added later.
-- The entity is invisible, has no gravity, and cannot be collided with.
+## Behaviour notes
 
-## Building
+- Cameras must be spawned while you are tracking a Sable sub-level (standing on the assembled ship).
+- Attachment data (sub-level id, local offset, angle, offset) is synced to the client.
+- Local offsets are stored relative to the sub-level rotation point (float-safe).
+- Spectate camera position/orientation is applied client-side each frame from Sable’s `renderPose()`.
+- `/cameranchor view` stores your gamemode and position; crouch (or stop spectating) restores both.
+- Duplicate tags are rejected on `addcam`.
+- `delcam` with no argument does **not** delete everything — it prints an error. Use `delcam all`.
 
-Requires:
-- NeoForge 1.21.1 (21.1.x)
-- Sable 2.0.3+
-- Java 21
+---
+
+## License
+
+MIT
