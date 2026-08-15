@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.entity.ModEntities;
 import net.minecraft.commands.CommandSourceStack;
@@ -15,8 +16,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.server.level.ServerPlayer;
 import dev.ryanhcode.sable.Sable;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import org.jetbrains.annotations.Nullable;
+import net.minecraft.world.level.GameType;
 
 public class CameraCommands {
 
@@ -111,6 +112,11 @@ public class CameraCommands {
                                 )
                         )
                 )
+                .then(Commands.literal("view")
+                        .then(Commands.argument("tag", StringArgumentType.string())
+                                .executes(ctx -> viewCamera(ctx.getSource(), StringArgumentType.getString(ctx, "tag")))
+                        )
+                )
         );
     }
 
@@ -201,5 +207,35 @@ public class CameraCommands {
                 "Set offset to " + x + ", " + y + ", " + z + " on " + finalCount + " camera(s)"
         ), true);
         return count;
+    }
+
+    private static int viewCamera(CommandSourceStack source, String tag) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        ServerLevel level = source.getLevel();
+
+        CameraAnchorEntity target = null;
+
+        for (Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof CameraAnchorEntity anchor && anchor.getTags().contains(tag)) {
+                target = anchor;
+                break;
+            }
+        }
+
+        if (target == null) {
+            source.sendFailure(Component.literal("No camera found with tag: " + tag));
+            return 0;
+        }
+
+        // Switch to spectator only if needed
+        if (player.gameMode.getGameModeForPlayer() != GameType.SPECTATOR) {
+            player.setGameMode(GameType.SPECTATOR);
+        }
+
+        // Spectate the camera
+        player.setCamera(target);
+
+        source.sendSuccess(() -> Component.literal("Now viewing camera: " + tag), true);
+        return 1;
     }
 }

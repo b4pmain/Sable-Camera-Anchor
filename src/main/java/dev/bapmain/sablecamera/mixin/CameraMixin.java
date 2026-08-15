@@ -34,11 +34,6 @@ public abstract class CameraMixin {
             return;
         }
 
-        System.out.println("[SableCamera] ===== Frame =====");
-        System.out.println("[SableCamera] attachedSubLevelId = " + anchor.getAttachedSubLevelId());
-        System.out.println("[SableCamera] local offset = " + anchor.getLocalX() + ", " + anchor.getLocalY() + ", " + anchor.getLocalZ());
-        System.out.println("[SableCamera] local pose = pitch " + anchor.getLocalPitch() + " yaw " + anchor.getLocalYaw());
-
         UUID subId = anchor.getAttachedSubLevelId();
         if (subId == null) {
             System.out.println("[SableCamera] FAIL: attachedSubLevelId is null");
@@ -46,7 +41,6 @@ public abstract class CameraMixin {
         }
 
         ClientSubLevel clientSub = findClientSubLevel(subId);
-        System.out.println("[SableCamera] findClientSubLevel → " + clientSub);
         if (clientSub == null) {
             System.out.println("[SableCamera] FAIL: could not find ClientSubLevel for UUID");
             return;
@@ -55,7 +49,6 @@ public abstract class CameraMixin {
         Object poseObj = null;
         try {
             poseObj = clientSub.renderPose();
-            System.out.println("[SableCamera] renderPose() → " + poseObj);
         } catch (Exception e) {
             System.out.println("[SableCamera] renderPose() threw: " + e);
             return;
@@ -141,8 +134,6 @@ public abstract class CameraMixin {
         lastRoll = roll;
 
         this.setRotation(yaw, pitch, roll);
-
-        System.out.println("[SableCamera] Transform applied → " + localPos.x + ", " + localPos.y + ", " + localPos.z);
     }
 
     private static ClientSubLevel findClientSubLevel(UUID id) {
