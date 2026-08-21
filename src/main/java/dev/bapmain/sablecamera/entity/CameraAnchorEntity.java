@@ -147,6 +147,9 @@ public class CameraAnchorEntity extends Entity {
         this.setLocalPose(this.getXRot(), this.getYRot(), this.getLocalRoll());
     }
 
+    private int snapCooldown = 0;
+    private static int debugTimer = 0;
+
     @Override
     public void tick() {
         super.tick();
@@ -157,6 +160,13 @@ public class CameraAnchorEntity extends Entity {
             return;
         }
 
+        return;
+        /*long t0 = System.nanoTime();
+        if (--snapCooldown > 0) {
+            return;
+        }
+        snapCooldown = 5;
+
         UUID subId = getAttachedSubLevelId();
         if (subId == null) {
             return;
@@ -164,6 +174,10 @@ public class CameraAnchorEntity extends Entity {
 
         SubLevel subLevel = findServerSubLevel(subId);
         if (subLevel == null) {
+            if ((debugTimer++ % 40) == 0) {
+                System.out.println("[SableCamera][Server] " + this.getStringUUID()
+                        + " subLevel MISSING id=" + subId);
+            }
             return;
         }
 
@@ -178,20 +192,41 @@ public class CameraAnchorEntity extends Entity {
 
         pose.transformPosition(localPos);
 
-        if (Math.abs(localPos.x) > 1.0e6
+        boolean huge = Math.abs(localPos.x) > 1.0e6
                 || Math.abs(localPos.y) > 1.0e6
-                || Math.abs(localPos.z) > 1.0e6) {
-            return;
+                || Math.abs(localPos.z) > 1.0e6;
+
+        double dx = localPos.x - this.getX();
+        double dy = localPos.y - this.getY();
+        double dz = localPos.z - this.getZ();
+        double distSq = dx * dx + dy * dy + dz * dz;
+
+        boolean moved = false;
+        if (!huge && distSq >= 0.01) {
+            this.setPos(localPos.x, localPos.y, localPos.z);
+            this.xo = localPos.x;
+            this.yo = localPos.y;
+            this.zo = localPos.z;
+            this.xOld = localPos.x;
+            this.yOld = localPos.y;
+            this.zOld = localPos.z;
+            moved = true;
         }
 
-        this.setPos(localPos.x, localPos.y, localPos.z);
+        long tookUs = (System.nanoTime() - t0) / 1000L;
 
-        this.xo = localPos.x;
-        this.yo = localPos.y;
-        this.zo = localPos.z;
-        this.xOld = localPos.x;
-        this.yOld = localPos.y;
-        this.zOld = localPos.z;
+        // Log ~once per second per entity when something interesting happens, or always every ~2s
+        if ((this.tickCount % 40) == 0 || tookUs > 2000 || huge) {
+            System.out.println(String.format(
+                    "[SableCamera][Server] ent=%s tag=%s pos=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f) huge=%s moved=%s snapUs=%d sub=%s",
+                    this.getStringUUID().substring(0, 8),
+                    this.getTags(),
+                    this.getX(), this.getY(), this.getZ(),
+                    localPos.x, localPos.y, localPos.z,
+                    huge, moved, tookUs,
+                    subId.toString().substring(0, 8)
+            ));
+        }*/
     }
 
     @Nullable

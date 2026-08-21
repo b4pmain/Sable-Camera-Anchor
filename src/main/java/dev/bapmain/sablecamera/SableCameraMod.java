@@ -2,6 +2,7 @@ package dev.bapmain.sablecamera;
 
 import com.mojang.logging.LogUtils;
 import dev.bapmain.sablecamera.entity.ModEntities;
+import dev.bapmain.sablecamera.network.ModNetwork;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -18,7 +19,9 @@ public class SableCameraMod {
         ModEntities.ENTITY_TYPES.register(modEventBus);
 
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(ModNetwork::register);
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
+
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

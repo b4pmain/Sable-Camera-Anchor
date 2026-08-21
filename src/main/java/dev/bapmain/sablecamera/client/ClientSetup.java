@@ -13,4 +13,5 @@ public class ClientSetup {
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.CAMERA_ANCHOR.get(), CameraAnchorRenderer::new);
     }
+
 }

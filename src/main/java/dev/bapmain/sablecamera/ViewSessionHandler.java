@@ -1,10 +1,11 @@
 package dev.bapmain.sablecamera;
 
-import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
+import dev.bapmain.sablecamera.network.FollowCameraPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 @EventBusSubscriber(modid = "sablecamera")
 public class ViewSessionHandler {
@@ -15,19 +16,20 @@ public class ViewSessionHandler {
             return;
         }
 
-        var sessions = CameraCommands.getViewSessions(); // expose the map
-        CameraCommands.ViewState state = sessions.get(player.getUUID());
+        var sessions = CameraCommands.getViewSessions();
+        var state = sessions.get(player.getUUID());
         if (state == null) {
             return;
         }
 
-        // Still spectating one of our cameras → do nothing
-        if (player.getCamera() instanceof CameraAnchorEntity) {
+        // Crouch = exit follow mode
+        if (!player.isShiftKeyDown()) {
             return;
         }
 
-        // Exited spectate (crouch / /spectate) → restore
         sessions.remove(player.getUUID());
+
+        PacketDistributor.sendToPlayer(player, new FollowCameraPayload(null));
 
         player.teleportTo(state.x, state.y, state.z);
         player.setYRot(state.yRot);
@@ -36,5 +38,11 @@ public class ViewSessionHandler {
         if (player.gameMode.getGameModeForPlayer() != state.gameMode) {
             player.setGameMode(state.gameMode);
         }
+
+        // Reduce "moved too quickly" after teleport
+        player.connection.resetPosition();
+
+        System.out.println("[SableCamera][Server] EXIT follow player="
+                + player.getGameProfile().getName());
     }
 }

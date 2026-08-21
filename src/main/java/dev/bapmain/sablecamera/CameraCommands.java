@@ -8,6 +8,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.entity.ModEntities;
+import dev.bapmain.sablecamera.network.FollowCameraPayload;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -18,6 +19,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.server.level.ServerPlayer;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.level.GameType;
 
@@ -290,7 +292,13 @@ public class CameraCommands {
             return 0;
         }
 
-        // Save current state before switching
+        if (target.getAttachedSubLevelId() == null) {
+            source.sendFailure(Component.literal("Camera is not attached to a sub-level")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        // Save return state only on first view in a session
         if (!VIEW_SESSIONS.containsKey(player.getUUID())) {
             VIEW_SESSIONS.put(player.getUUID(), new ViewState(player));
         }
@@ -299,9 +307,15 @@ public class CameraCommands {
             player.setGameMode(GameType.SPECTATOR);
         }
 
-        player.setCamera(target);
+        // NO player.setCamera(target) — that caused multiplayer timeouts
 
-        source.sendSuccess(() -> Component.literal("Viewing camera: " + tag + " (crouch to exit)"), false);
+        PacketDistributor.sendToPlayer(player, new FollowCameraPayload(target.getUUID()));
+
+        System.out.println("[SableCamera][Server] FOLLOW player=" + player.getGameProfile().getName()
+                + " cam=" + tag + " uuid=" + target.getUUID());
+
+        source.sendSuccess(() -> Component.literal(
+                "Viewing camera: " + tag + " (crouch to exit)"), false);
         return 1;
     }
 
