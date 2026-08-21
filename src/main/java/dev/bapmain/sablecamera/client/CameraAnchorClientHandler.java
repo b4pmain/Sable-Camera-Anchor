@@ -2,7 +2,7 @@ package dev.bapmain.sablecamera.client;
 
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.ryanhcode.sable.Sable;
-import dev.ryanhcode.sable.companion.math.Pose3dc;          // adjust if the package is different
+import dev.ryanhcode.sable.companion.math.Pose3dc;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;

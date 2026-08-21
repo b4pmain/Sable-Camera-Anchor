@@ -1,7 +1,6 @@
 package dev.bapmain.sablecamera.client;
 
 import dev.bapmain.sablecamera.entity.ModEntities;
-import net.minecraft.client.renderer.entity.EntityRenderers;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;

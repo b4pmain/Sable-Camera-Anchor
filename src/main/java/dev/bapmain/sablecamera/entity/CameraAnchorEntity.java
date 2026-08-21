@@ -16,24 +16,20 @@ import java.util.UUID;
 
 public class CameraAnchorEntity extends Entity {
 
-    // Synched data – these travel to the client
     private static final EntityDataAccessor<String> DATA_SUBLEVEL_ID =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.STRING);
-
     private static final EntityDataAccessor<Float> DATA_LOCAL_X =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_LOCAL_Y =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_LOCAL_Z =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
-    // New synched data
     private static final EntityDataAccessor<Float> DATA_OFFSET_X =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_OFFSET_Y =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_OFFSET_Z =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
-
     private static final EntityDataAccessor<Float> DATA_LOCAL_PITCH =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_LOCAL_YAW =
@@ -155,10 +151,7 @@ public class CameraAnchorEntity extends Entity {
     public void tick() {
         super.tick();
         this.setDeltaMovement(0, 0, 0);
-        // No heavy server-side transform – the client mixin handles the smooth camera
     }
-
-    // ===== NBT (for world save / reload) =====
 
     @Override
     protected void readAdditionalSaveData(CompoundTag tag) {
@@ -169,6 +162,13 @@ public class CameraAnchorEntity extends Entity {
             this.entityData.set(DATA_LOCAL_X, tag.getFloat("LocalX"));
             this.entityData.set(DATA_LOCAL_Y, tag.getFloat("LocalY"));
             this.entityData.set(DATA_LOCAL_Z, tag.getFloat("LocalZ"));
+        }
+        if (tag.contains("OffsetX")) {
+            setOffset(
+                    tag.getFloat("OffsetX"),
+                    tag.getFloat("OffsetY"),
+                    tag.getFloat("OffsetZ")
+            );
         }
         if (tag.contains("LocalPitch")) {
             this.setLocalPose(tag.getFloat("LocalPitch"), tag.getFloat("LocalYaw"), tag.getFloat("LocalRoll"));
@@ -184,6 +184,9 @@ public class CameraAnchorEntity extends Entity {
         tag.putFloat("LocalX", getLocalX());
         tag.putFloat("LocalY", getLocalY());
         tag.putFloat("LocalZ", getLocalZ());
+        tag.putFloat("OffsetX", getOffsetX());
+        tag.putFloat("OffsetY", getOffsetY());
+        tag.putFloat("OffsetZ", getOffsetZ());
         tag.putFloat("LocalPitch", getLocalPitch());
         tag.putFloat("LocalYaw", getLocalYaw());
         tag.putFloat("LocalRoll", getLocalRoll());
