@@ -10,7 +10,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-
+import org.joml.Vector3d;
 import javax.annotation.Nullable;
 import java.util.UUID;
 
@@ -151,6 +151,61 @@ public class CameraAnchorEntity extends Entity {
     public void tick() {
         super.tick();
         this.setDeltaMovement(0, 0, 0);
+
+        // cameramixin
+        if (this.level().isClientSide) {
+            return;
+        }
+
+        UUID subId = getAttachedSubLevelId();
+        if (subId == null) {
+            return;
+        }
+
+        SubLevel subLevel = findServerSubLevel(subId);
+        if (subLevel == null) {
+            return;
+        }
+
+        var pose = subLevel.logicalPose();
+        var rp = pose.rotationPoint();
+
+        Vector3d localPos = new Vector3d(
+                rp.x() + getLocalX() + getOffsetX(),
+                rp.y() + getLocalY() + getOffsetY(),
+                rp.z() + getLocalZ() + getOffsetZ()
+        );
+
+        pose.transformPosition(localPos);
+
+        if (Math.abs(localPos.x) > 1.0e6
+                || Math.abs(localPos.y) > 1.0e6
+                || Math.abs(localPos.z) > 1.0e6) {
+            return;
+        }
+
+        this.setPos(localPos.x, localPos.y, localPos.z);
+
+        this.xo = localPos.x;
+        this.yo = localPos.y;
+        this.zo = localPos.z;
+        this.xOld = localPos.x;
+        this.yOld = localPos.y;
+        this.zOld = localPos.z;
+    }
+
+    @Nullable
+    private SubLevel findServerSubLevel(UUID id) {
+        try {
+            var container = dev.ryanhcode.sable.api.sublevel.SubLevelContainer.getContainer(this.level());
+            if (container == null) {
+                return null;
+            }
+
+            return container.getSubLevel(id);
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     @Override

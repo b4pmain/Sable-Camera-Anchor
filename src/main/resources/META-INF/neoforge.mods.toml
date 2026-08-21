@@ -4,7 +4,7 @@ license = "MIT"
 
 [[mods]]
 modId = "sablecamera"
-version = "1.0.2"
+version = "1.0.1"
 displayName = "Sable Camera Anchor"
 authors = "bapmain"
 description = '''

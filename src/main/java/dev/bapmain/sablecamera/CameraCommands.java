@@ -75,7 +75,7 @@ public class CameraCommands {
 
                                     int finalCount = count;
                                     ctx.getSource().sendSuccess(() ->
-                                            Component.literal("Deleted " + finalCount + " camera(s)"), true);
+                                            Component.literal("Deleted " + finalCount + " camera(s)"), false);
                                     return finalCount;
                                 })
                         )
@@ -172,7 +172,7 @@ public class CameraCommands {
                                     int finalCount = count;
                                     ctx.getSource().sendSuccess(() -> Component.literal(
                                             (value ? "Showing" : "Hiding") + " " + finalCount + " camera(s)"
-                                    ), true);
+                                    ), false);
                                     return finalCount;
                                 })
                         )
@@ -218,7 +218,7 @@ public class CameraCommands {
         String where = (pos == null) ? "player position" : pos;
         source.sendSuccess(() -> Component.literal(
                 "Added camera '" + tag + "' at " + where
-        ), true);
+        ), false);
         return 1;
     }
 
@@ -244,7 +244,7 @@ public class CameraCommands {
 
         String msg = String.format("Set angle pitch=%.1f yaw=%.1f roll=%.1f on %d camera(s)",
                 pitch, yaw, roll, count);
-        source.sendSuccess(() -> Component.literal(msg), true);
+        source.sendSuccess(() -> Component.literal(msg), false);
         return count;
     }
 
@@ -268,7 +268,7 @@ public class CameraCommands {
 
         source.sendSuccess(() -> Component.literal(
                 "Set offset to " + x + ", " + y + ", " + z + " on " + finalCount + " camera(s)"
-        ), true);
+        ), false);
         return count;
     }
 
@@ -291,7 +291,9 @@ public class CameraCommands {
         }
 
         // Save current state before switching
-        VIEW_SESSIONS.put(player.getUUID(), new ViewState(player));
+        if (!VIEW_SESSIONS.containsKey(player.getUUID())) {
+            VIEW_SESSIONS.put(player.getUUID(), new ViewState(player));
+        }
 
         if (player.gameMode.getGameModeForPlayer() != GameType.SPECTATOR) {
             player.setGameMode(GameType.SPECTATOR);
@@ -299,7 +301,7 @@ public class CameraCommands {
 
         player.setCamera(target);
 
-        source.sendSuccess(() -> Component.literal("Viewing camera: " + tag + " (crouch to exit)"), true);
+        source.sendSuccess(() -> Component.literal("Viewing camera: " + tag + " (crouch to exit)"), false);
         return 1;
     }
 
