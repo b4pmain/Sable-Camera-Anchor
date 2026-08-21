@@ -298,7 +298,7 @@ public class CameraCommands {
             return 0;
         }
 
-        // Save return state only on first view in a session
+        // first view in sesh only return
         if (!VIEW_SESSIONS.containsKey(player.getUUID())) {
             VIEW_SESSIONS.put(player.getUUID(), new ViewState(player));
         }
@@ -307,12 +307,9 @@ public class CameraCommands {
             player.setGameMode(GameType.SPECTATOR);
         }
 
-        // NO player.setCamera(target) — that caused multiplayer timeouts
+        // no more player.setCamera
 
         PacketDistributor.sendToPlayer(player, new FollowCameraPayload(target.getUUID()));
-
-        System.out.println("[SableCamera][Server] FOLLOW player=" + player.getGameProfile().getName()
-                + " cam=" + tag + " uuid=" + target.getUUID());
 
         source.sendSuccess(() -> Component.literal(
                 "Viewing camera: " + tag + " (crouch to exit)"), false);

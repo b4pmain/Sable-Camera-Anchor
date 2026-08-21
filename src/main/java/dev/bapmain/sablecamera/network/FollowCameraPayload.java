@@ -2,6 +2,7 @@ package dev.bapmain.sablecamera.network;
 
 import dev.bapmain.sablecamera.SableCameraMod;
 import dev.bapmain.sablecamera.client.CameraFollowClient;
+import dev.bapmain.sablecamera.client.CameraOrientState;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -40,6 +41,13 @@ public record FollowCameraPayload(@Nullable UUID cameraId) implements CustomPack
     }
 
     public static void handle(FollowCameraPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> CameraFollowClient.setFollow(payload.cameraId()));
+        context.enqueueWork(() -> {
+            if (payload.cameraId() == null) {
+                CameraFollowClient.clear();
+                CameraOrientState.clear();
+            } else {
+                CameraFollowClient.setFollow(payload.cameraId());
+            }
+        });
     }
 }

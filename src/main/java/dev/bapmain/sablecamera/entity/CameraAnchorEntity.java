@@ -154,79 +154,11 @@ public class CameraAnchorEntity extends Entity {
     public void tick() {
         super.tick();
         this.setDeltaMovement(0, 0, 0);
-
         // cameramixin
         if (this.level().isClientSide) {
             return;
         }
-
         return;
-        /*long t0 = System.nanoTime();
-        if (--snapCooldown > 0) {
-            return;
-        }
-        snapCooldown = 5;
-
-        UUID subId = getAttachedSubLevelId();
-        if (subId == null) {
-            return;
-        }
-
-        SubLevel subLevel = findServerSubLevel(subId);
-        if (subLevel == null) {
-            if ((debugTimer++ % 40) == 0) {
-                System.out.println("[SableCamera][Server] " + this.getStringUUID()
-                        + " subLevel MISSING id=" + subId);
-            }
-            return;
-        }
-
-        var pose = subLevel.logicalPose();
-        var rp = pose.rotationPoint();
-
-        Vector3d localPos = new Vector3d(
-                rp.x() + getLocalX() + getOffsetX(),
-                rp.y() + getLocalY() + getOffsetY(),
-                rp.z() + getLocalZ() + getOffsetZ()
-        );
-
-        pose.transformPosition(localPos);
-
-        boolean huge = Math.abs(localPos.x) > 1.0e6
-                || Math.abs(localPos.y) > 1.0e6
-                || Math.abs(localPos.z) > 1.0e6;
-
-        double dx = localPos.x - this.getX();
-        double dy = localPos.y - this.getY();
-        double dz = localPos.z - this.getZ();
-        double distSq = dx * dx + dy * dy + dz * dz;
-
-        boolean moved = false;
-        if (!huge && distSq >= 0.01) {
-            this.setPos(localPos.x, localPos.y, localPos.z);
-            this.xo = localPos.x;
-            this.yo = localPos.y;
-            this.zo = localPos.z;
-            this.xOld = localPos.x;
-            this.yOld = localPos.y;
-            this.zOld = localPos.z;
-            moved = true;
-        }
-
-        long tookUs = (System.nanoTime() - t0) / 1000L;
-
-        // Log ~once per second per entity when something interesting happens, or always every ~2s
-        if ((this.tickCount % 40) == 0 || tookUs > 2000 || huge) {
-            System.out.println(String.format(
-                    "[SableCamera][Server] ent=%s tag=%s pos=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f) huge=%s moved=%s snapUs=%d sub=%s",
-                    this.getStringUUID().substring(0, 8),
-                    this.getTags(),
-                    this.getX(), this.getY(), this.getZ(),
-                    localPos.x, localPos.y, localPos.z,
-                    huge, moved, tookUs,
-                    subId.toString().substring(0, 8)
-            ));
-        }*/
     }
 
     @Nullable

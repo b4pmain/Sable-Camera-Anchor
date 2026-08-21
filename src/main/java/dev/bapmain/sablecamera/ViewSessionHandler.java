@@ -22,7 +22,7 @@ public class ViewSessionHandler {
             return;
         }
 
-        // Crouch = exit follow mode
+        // sneak to exit
         if (!player.isShiftKeyDown()) {
             return;
         }
@@ -39,10 +39,7 @@ public class ViewSessionHandler {
             player.setGameMode(state.gameMode);
         }
 
-        // Reduce "moved too quickly" after teleport
         player.connection.resetPosition();
 
-        System.out.println("[SableCamera][Server] EXIT follow player="
-                + player.getGameProfile().getName());
     }
 }
