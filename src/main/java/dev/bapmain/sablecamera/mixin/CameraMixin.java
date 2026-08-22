@@ -2,6 +2,7 @@ package dev.bapmain.sablecamera.mixin;
 
 import dev.bapmain.sablecamera.client.CameraFollowClient;
 import dev.bapmain.sablecamera.client.CameraOrientState;
+import dev.bapmain.sablecamera.client.CameraPoseClient;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
@@ -40,95 +41,107 @@ public abstract class CameraMixin {
                                                boolean detached, boolean thirdPersonReverse,
                                                float partialTick, CallbackInfo ci) {
 
+        Minecraft mc = Minecraft.getInstance();
+        if (entity != mc.player) {
+            return;
+        }
+
+        // ----- 1) Local smooth path (host / near ship with ClientSubLevel) -----
         CameraAnchorEntity anchor = resolveAnchor(entity);
-        if (anchor == null) {
-            return;
+
+        if (anchor != null) {
+            UUID subId = anchor.getAttachedSubLevelId();
+            if (subId != null) {
+                ClientSubLevel clientSub = findClientSubLevel(subId);
+
+                if (clientSub != null) {
+                    Object poseObj;
+                    try {
+                        poseObj = clientSub.renderPose();
+                    } catch (Exception e) {
+                        poseObj = null;
+                    }
+
+                    if (poseObj != null) {
+                        var st = CameraOrientState.get(anchor.getId());
+                        var pose = (dev.ryanhcode.sable.companion.math.Pose3dc) poseObj;
+                        var rp = pose.rotationPoint();
+
+                        Vector3d localPos = new Vector3d(
+                                rp.x() + anchor.getLocalX() + anchor.getOffsetX(),
+                                rp.y() + anchor.getLocalY() + anchor.getOffsetY(),
+                                rp.z() + anchor.getLocalZ() + anchor.getOffsetZ()
+                        );
+                        pose.transformPosition(localPos);
+                        this.setPosition(localPos.x, localPos.y, localPos.z);
+
+                        Quaterniondc shipRot = pose.orientation();
+                        Quaterniond localCam = new Quaterniond()
+                                .rotateY(Math.toRadians(-anchor.getLocalYaw()))
+                                .rotateX(Math.toRadians(anchor.getLocalPitch()))
+                                .rotateZ(Math.toRadians(anchor.getLocalRoll()));
+                        Quaterniond worldRot = new Quaterniond(shipRot).mul(localCam);
+
+                        Vector3d forward = new Vector3d(0.0, 0.0, 1.0);
+                        Vector3d up = new Vector3d(0.0, 1.0, 0.0);
+                        worldRot.transform(forward);
+                        worldRot.transform(up);
+
+                        double horizontal = Math.sqrt(forward.x * forward.x + forward.z * forward.z);
+                        float yaw = (float) Math.toDegrees(Math.atan2(-forward.x, forward.z));
+                        float pitch = horizontal < 1.0e-5
+                                ? st.pitch
+                                : (float) Math.toDegrees(Math.atan2(-forward.y, horizontal));
+
+                        Vector3d worldUp = new Vector3d(0.0, 1.0, 0.0);
+                        Vector3d right = new Vector3d();
+                        forward.cross(worldUp, right);
+
+                        float roll;
+                        if (right.lengthSquared() < 1.0e-4) {
+                            roll = st.roll;
+                        } else {
+                            right.normalize();
+                            Vector3d expectedUp = new Vector3d();
+                            right.cross(forward, expectedUp);
+                            expectedUp.normalize();
+                            roll = (float) Math.toDegrees(Math.atan2(right.dot(up), expectedUp.dot(up)));
+                        }
+
+                        yaw = unwrap(yaw, st.yaw);
+                        pitch = unwrap(pitch, st.pitch);
+                        roll = unwrap(roll, st.roll);
+
+                        yaw = st.yaw + (yaw - st.yaw) * 0.7f;
+                        pitch = st.pitch + (pitch - st.pitch) * 0.25f;
+                        roll = st.roll + (roll - st.roll) * 0.7f;
+
+                        st.yaw = yaw;
+                        st.pitch = pitch;
+                        st.roll = roll;
+
+                        yaw = Mth.wrapDegrees(yaw);
+                        pitch = Mth.clamp(pitch, -90.0f, 90.0f);
+                        roll = Mth.wrapDegrees(roll);
+
+                        this.setRotation(yaw, pitch, roll);
+                        return;
+                    }
+                }
+            }
         }
 
-        var st = CameraOrientState.get(anchor.getId());
-
-        UUID subId = anchor.getAttachedSubLevelId();
-        if (subId == null) {
-            return;
+        // ----- 2) Fallback: server pose stream (far joiner) -----
+        if (CameraPoseClient.isActive()) {
+            this.setPosition(
+                    CameraPoseClient.x(partialTick),
+                    CameraPoseClient.y(partialTick),
+                    CameraPoseClient.z(partialTick));
+            this.setRotation(
+                    CameraPoseClient.yaw(partialTick),
+                    CameraPoseClient.pitch(partialTick),
+                    CameraPoseClient.roll(partialTick));
         }
-
-        ClientSubLevel clientSub = findClientSubLevel(subId);
-        if (clientSub == null) {
-            return;
-        }
-
-        Object poseObj;
-        try {
-            poseObj = clientSub.renderPose();
-        } catch (Exception e) {
-            return;
-        }
-        if (poseObj == null) {
-            return;
-        }
-
-        var pose = (dev.ryanhcode.sable.companion.math.Pose3dc) poseObj;
-        var rp = pose.rotationPoint();
-
-        Vector3d localPos = new Vector3d(
-                rp.x() + anchor.getLocalX() + anchor.getOffsetX(),
-                rp.y() + anchor.getLocalY() + anchor.getOffsetY(),
-                rp.z() + anchor.getLocalZ() + anchor.getOffsetZ()
-        );
-        pose.transformPosition(localPos);
-        this.setPosition(localPos.x, localPos.y, localPos.z);
-
-        Quaterniondc shipRot = pose.orientation();
-        Quaterniond localCam = new Quaterniond()
-                .rotateY(Math.toRadians(-anchor.getLocalYaw()))
-                .rotateX(Math.toRadians(anchor.getLocalPitch()))
-                .rotateZ(Math.toRadians(anchor.getLocalRoll()));
-        Quaterniond worldRot = new Quaterniond(shipRot).mul(localCam);
-
-        Vector3d forward = new Vector3d(0.0, 0.0, 1.0);
-        Vector3d up = new Vector3d(0.0, 1.0, 0.0);
-        worldRot.transform(forward);
-        worldRot.transform(up);
-
-        double horizontal = Math.sqrt(forward.x * forward.x + forward.z * forward.z);
-        float yaw = (float) Math.toDegrees(Math.atan2(-forward.x, forward.z));
-        float pitch = horizontal < 1.0e-5
-                ? st.pitch
-                : (float) Math.toDegrees(Math.atan2(-forward.y, horizontal));
-
-        Vector3d worldUp = new Vector3d(0.0, 1.0, 0.0);
-        Vector3d right = new Vector3d();
-        forward.cross(worldUp, right);
-
-        float roll;
-        if (right.lengthSquared() < 1.0e-4) {
-            roll = st.roll;
-        } else {
-            right.normalize();
-            Vector3d expectedUp = new Vector3d();
-            right.cross(forward, expectedUp);
-            expectedUp.normalize();
-            roll = (float) Math.toDegrees(Math.atan2(right.dot(up), expectedUp.dot(up)));
-        }
-
-        // Unwrap / smooth against THIS camera's state only
-        yaw   = unwrap(yaw,   st.yaw);
-        pitch = unwrap(pitch, st.pitch);
-        roll  = unwrap(roll,  st.roll);
-
-        yaw   = st.yaw   + (yaw   - st.yaw)   * 0.7f;
-        pitch = st.pitch + (pitch - st.pitch) * 0.25f;
-        roll  = st.roll  + (roll  - st.roll)  * 0.7f;
-
-        st.yaw = yaw;
-        st.pitch = pitch;
-        st.roll = roll;
-
-        yaw   = Mth.wrapDegrees(yaw);
-        pitch = Mth.clamp(pitch, -90.0f, 90.0f);
-        roll  = Mth.wrapDegrees(roll);
-
-        this.setRotation(yaw, pitch, roll);
     }
 
     /** Prefer follow UUID; fall back to direct spectate entity if ever used. */

@@ -16,5 +16,11 @@ public final class ModNetwork {
                 FollowCameraPayload.CODEC,
                 FollowCameraPayload::handle
         );
+
+        registrar.playToClient(
+                CameraPosePayload.TYPE,
+                CameraPosePayload.CODEC,
+                CameraPosePayload::handle
+        );
     }
 }

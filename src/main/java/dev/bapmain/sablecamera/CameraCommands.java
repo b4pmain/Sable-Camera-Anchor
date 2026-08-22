@@ -23,6 +23,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.level.GameType;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 public class CameraCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
@@ -292,6 +296,9 @@ public class CameraCommands {
             return 0;
         }
 
+        FOLLOW_TARGETS.put(player.getUUID(), target.getUUID());
+        PacketDistributor.sendToPlayer(player, new FollowCameraPayload(target.getUUID()));
+
         if (target.getAttachedSubLevelId() == null) {
             source.sendFailure(Component.literal("Camera is not attached to a sub-level")
                     .withStyle(ChatFormatting.RED));
@@ -317,6 +324,12 @@ public class CameraCommands {
     }
 
     private static final java.util.Map<java.util.UUID, ViewState> VIEW_SESSIONS = new java.util.HashMap<>();
+    /** player UUID → camera entity UUID */
+    public static final Map<UUID, UUID> FOLLOW_TARGETS = new HashMap<>();
+
+    static Map<UUID, UUID> getFollowTargets() {
+        return FOLLOW_TARGETS;
+    }
 
     protected static class ViewState {
         final GameType gameMode;

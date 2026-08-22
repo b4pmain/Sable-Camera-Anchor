@@ -1,5 +1,6 @@
 package dev.bapmain.sablecamera;
 
+import dev.bapmain.sablecamera.network.CameraPosePayload;
 import dev.bapmain.sablecamera.network.FollowCameraPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -28,8 +29,9 @@ public class ViewSessionHandler {
         }
 
         sessions.remove(player.getUUID());
-
+        CameraCommands.getFollowTargets().remove(player.getUUID());
         PacketDistributor.sendToPlayer(player, new FollowCameraPayload(null));
+        PacketDistributor.sendToPlayer(player, CameraPosePayload.clear());
 
         player.teleportTo(state.x, state.y, state.z);
         player.setYRot(state.yRot);
