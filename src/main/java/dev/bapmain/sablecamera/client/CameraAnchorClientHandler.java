@@ -2,7 +2,10 @@ package dev.bapmain.sablecamera.client;
 
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
+import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
+import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -11,6 +14,8 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import org.joml.Vector3d;
+
+import java.util.UUID;
 
 @EventBusSubscriber(modid = "sablecamera", value = Dist.CLIENT)
 public class CameraAnchorClientHandler {
@@ -63,5 +68,46 @@ public class CameraAnchorClientHandler {
 
         event.setYaw(worldYaw);
         event.setPitch(worldPitch);
+    }
+
+    public static void snapToRenderPose(CameraAnchorEntity anchor) {
+        UUID subId = anchor.getAttachedSubLevelId();
+        if (subId == null) return;
+
+        ClientSubLevel sub = findClientSubLevel(subId);
+        if (sub == null) return;
+
+        var pose = sub.renderPose();
+        if (pose == null) return;
+
+        var rp = pose.rotationPoint();
+        Vector3d localPos = new Vector3d(
+                rp.x() + anchor.getLocalX() + anchor.getOffsetX(),
+                rp.y() + anchor.getLocalY() + anchor.getOffsetY(),
+                rp.z() + anchor.getLocalZ() + anchor.getOffsetZ()
+        );
+        pose.transformPosition(localPos);
+
+        if (Math.abs(localPos.x) < 1.0e6
+                && Math.abs(localPos.y) < 1.0e6
+                && Math.abs(localPos.z) < 1.0e6) {
+            anchor.setPos(localPos.x, localPos.y, localPos.z);
+        }
+    }
+
+    public static ClientSubLevel findClientSubLevel(UUID id) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+
+        SubLevelContainer container = SubLevelContainer.getContainer(mc.level);
+        if (!(container instanceof ClientSubLevelContainer clientContainer)) {
+            return null;
+        }
+        for (ClientSubLevel sub : clientContainer.getAllSubLevels()) {
+            if (id.equals(sub.getUniqueId())) {
+                return sub;
+            }
+        }
+        return null;
     }
 }

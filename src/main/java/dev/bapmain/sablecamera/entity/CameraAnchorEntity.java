@@ -1,6 +1,8 @@
 package dev.bapmain.sablecamera.entity;
 
+import dev.bapmain.sablecamera.client.CameraAnchorClientHandler;
 import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -8,9 +10,10 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Vector3d;
+
 import javax.annotation.Nullable;
 import java.util.UUID;
 
@@ -44,7 +47,6 @@ public class CameraAnchorEntity extends Entity {
         this.noPhysics = true;
         this.setNoGravity(true);
         this.setInvulnerable(true);
-        this.setInvisible(true);
     }
 
     @Override
@@ -62,7 +64,7 @@ public class CameraAnchorEntity extends Entity {
         builder.define(DATA_VISIBLE, false);
     }
 
-    // ===== Public getters (used by the client mixin) =====
+    // Public getters (used by the client mixin)
 
     @Nullable
     public UUID getAttachedSubLevelId() {
@@ -123,7 +125,7 @@ public class CameraAnchorEntity extends Entity {
         this.entityData.set(DATA_OFFSET_Z, z);
     }
 
-    // ===== Attachment =====
+    // Attachment
 
     public void tryAttachToPlayerTracking(Entity player) {
         SubLevel subLevel = Sable.HELPER.getTrackingSubLevel(player);
@@ -138,7 +140,6 @@ public class CameraAnchorEntity extends Entity {
         Vec3 worldPos = this.position();
         Vec3 localPos = subLevel.logicalPose().transformPositionInverse(worldPos);
 
-        // Store relative to rotation point (small numbers, float-safe)
         var rp = subLevel.logicalPose().rotationPoint();
         this.entityData.set(DATA_LOCAL_X, (float) (localPos.x - rp.x()));
         this.entityData.set(DATA_LOCAL_Y, (float) (localPos.y - rp.y()));
@@ -147,16 +148,13 @@ public class CameraAnchorEntity extends Entity {
         this.setLocalPose(this.getXRot(), this.getYRot(), this.getLocalRoll());
     }
 
-    private int snapCooldown = 0;
-    private static int debugTimer = 0;
-
     @Override
     public void tick() {
         super.tick();
         this.setDeltaMovement(0, 0, 0);
         // cameramixin
         if (this.level().isClientSide) {
-            return;
+            dev.bapmain.sablecamera.client.CameraAnchorClientHandler.snapToRenderPose(this);
         }
         return;
     }
@@ -216,6 +214,16 @@ public class CameraAnchorEntity extends Entity {
 
     @Override
     public boolean isPickable() {
+        return true; // so it can be spectated in replay mod
+    }
+
+    @Override
+    public boolean isInvisible() {
+        return false; // replaymod canspectate
+    }
+
+    @Override
+    public boolean isInvisibleTo(Player player) {
         return false;
     }
 

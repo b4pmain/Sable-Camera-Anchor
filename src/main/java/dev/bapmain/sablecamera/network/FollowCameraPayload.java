@@ -3,6 +3,7 @@ package dev.bapmain.sablecamera.network;
 import dev.bapmain.sablecamera.SableCameraMod;
 import dev.bapmain.sablecamera.client.CameraFollowClient;
 import dev.bapmain.sablecamera.client.CameraOrientState;
+import dev.bapmain.sablecamera.client.ReplayCompat;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -42,6 +43,9 @@ public record FollowCameraPayload(@Nullable UUID cameraId) implements CustomPack
 
     public static void handle(FollowCameraPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
+            if (ReplayCompat.isInReplay()) {
+                return; // check whether in replay or not
+            }
             if (payload.cameraId() == null) {
                 CameraFollowClient.clear();
                 CameraOrientState.clear();

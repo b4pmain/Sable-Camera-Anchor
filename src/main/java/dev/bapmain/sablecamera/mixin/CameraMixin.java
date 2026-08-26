@@ -3,6 +3,7 @@ package dev.bapmain.sablecamera.mixin;
 import dev.bapmain.sablecamera.client.CameraFollowClient;
 import dev.bapmain.sablecamera.client.CameraOrientState;
 import dev.bapmain.sablecamera.client.CameraPoseClient;
+import dev.bapmain.sablecamera.client.ReplayCompat;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
@@ -42,18 +43,32 @@ public abstract class CameraMixin {
                                                float partialTick, CallbackInfo ci) {
 
         Minecraft mc = Minecraft.getInstance();
-        if (entity != mc.player) {
+        boolean replay = ReplayCompat.isInReplay();
+
+        CameraAnchorEntity anchor = resolveAnchor(entity);
+
+        if (entity instanceof CameraAnchorEntity direct) {
+            anchor = direct;
+        } else if (!replay && entity == mc.player) {
+            anchor = resolveAnchor(entity);
+        } else {
+            if (!replay && entity == mc.player && CameraPoseClient.isActive()) {
+                this.setPosition(
+                        CameraPoseClient.x(partialTick),
+                        CameraPoseClient.y(partialTick),
+                        CameraPoseClient.z(partialTick));
+                this.setRotation(
+                        CameraPoseClient.yaw(partialTick),
+                        CameraPoseClient.pitch(partialTick),
+                        CameraPoseClient.roll(partialTick));
+            }
             return;
         }
-
-        // ----- 1) Local smooth path (host / near ship with ClientSubLevel) -----
-        CameraAnchorEntity anchor = resolveAnchor(entity);
 
         if (anchor != null) {
             UUID subId = anchor.getAttachedSubLevelId();
             if (subId != null) {
                 ClientSubLevel clientSub = findClientSubLevel(subId);
-
                 if (clientSub != null) {
                     Object poseObj;
                     try {
@@ -131,8 +146,8 @@ public abstract class CameraMixin {
             }
         }
 
-        // ----- 2) Fallback: server pose stream (far joiner) -----
-        if (CameraPoseClient.isActive()) {
+        // Live far-joiner only (no packets in ReplayMod)
+        if (entity == mc.player && CameraPoseClient.isActive()) {
             this.setPosition(
                     CameraPoseClient.x(partialTick),
                     CameraPoseClient.y(partialTick),

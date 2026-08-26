@@ -4,12 +4,12 @@ license = "MIT"
 
 [[mods]]
 modId = "sablecamera"
-version = "1.0.1"
+version = "1.0.2"
 displayName = "Sable Camera Anchor"
-authors = "bapmain"
+authors = "itsRobby8158"
 description = '''
 Minimal camera anchor entity for Sable / Create Aeronautics.
-Supports spectating, custom tags, and tiltable head angles.
+Supports Replay Mod, spectating, custom tags, and tiltable head angles.
 '''
 
 [[dependencies.sablecamera]]

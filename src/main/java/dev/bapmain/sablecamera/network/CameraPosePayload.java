@@ -2,6 +2,7 @@ package dev.bapmain.sablecamera.network;
 
 import dev.bapmain.sablecamera.SableCameraMod;
 import dev.bapmain.sablecamera.client.CameraPoseClient;
+import dev.bapmain.sablecamera.client.ReplayCompat;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -58,6 +59,10 @@ public record CameraPosePayload(
 
     public static void handle(CameraPosePayload payload, IPayloadContext context) {
         context.enqueueWork(() -> {
+            if (ReplayCompat.isInReplay()) {
+                CameraPoseClient.clear();
+                return;
+            }
             if (!payload.active) {
                 CameraPoseClient.clear();
             } else {
