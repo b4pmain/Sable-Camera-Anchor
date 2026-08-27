@@ -218,6 +218,7 @@ public class CameraCommands {
         CameraAnchorEntity anchor = new CameraAnchorEntity(ModEntities.CAMERA_ANCHOR.get(), level);
         anchor.setPos(x, y, z);
         anchor.addTag(tag);
+        anchor.setCamTag(tag);
         anchor.tryAttachToPlayerTracking(player);
         level.addFreshEntity(anchor);
 
@@ -297,7 +298,7 @@ public class CameraCommands {
         }
 
         FOLLOW_TARGETS.put(player.getUUID(), target.getUUID());
-        PacketDistributor.sendToPlayer(player, new FollowCameraPayload(target.getUUID()));
+        PacketDistributor.sendToPlayer(player, FollowCameraPayload.of(target));
 
         if (target.getAttachedSubLevelId() == null) {
             source.sendFailure(Component.literal("Camera is not attached to a sub-level")
@@ -316,7 +317,7 @@ public class CameraCommands {
 
         // no more player.setCamera
 
-        PacketDistributor.sendToPlayer(player, new FollowCameraPayload(target.getUUID()));
+        PacketDistributor.sendToPlayer(player, FollowCameraPayload.of(target));
 
         source.sendSuccess(() -> Component.literal(
                 "Viewing camera: " + tag + " (crouch to exit)"), false);

@@ -1,18 +1,18 @@
 package dev.bapmain.sablecamera.entity;
 
-import dev.bapmain.sablecamera.client.CameraAnchorClientHandler;
 import dev.ryanhcode.sable.Sable;
-import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3d;
 
 import javax.annotation.Nullable;
 import java.util.UUID;
@@ -41,6 +41,12 @@ public class CameraAnchorEntity extends Entity {
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Boolean> DATA_VISIBLE =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<String> DATA_CAM_TAG =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.STRING);
+
+    private int snapCooldown = 0;
+    private net.minecraft.world.level.ChunkPos ticketChunk;
+    public static final java.util.Set<CameraAnchorEntity> LIVE = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public CameraAnchorEntity(EntityType<? extends CameraAnchorEntity> type, Level level) {
         super(type, level);
@@ -62,6 +68,7 @@ public class CameraAnchorEntity extends Entity {
         builder.define(DATA_LOCAL_YAW, 0.0f);
         builder.define(DATA_LOCAL_ROLL, 0.0f);
         builder.define(DATA_VISIBLE, false);
+        builder.define(DATA_CAM_TAG, "");
     }
 
     // Public getters (used by the client mixin)
@@ -103,12 +110,6 @@ public class CameraAnchorEntity extends Entity {
         return this.entityData.get(DATA_LOCAL_ROLL);
     }
 
-    public void setLocalPose(float pitch, float yaw, float roll) {
-        this.entityData.set(DATA_LOCAL_PITCH, pitch);
-        this.entityData.set(DATA_LOCAL_YAW, yaw);
-        this.entityData.set(DATA_LOCAL_ROLL, roll);
-    }
-
     public float getOffsetX() {
         return this.entityData.get(DATA_OFFSET_X);
     }
@@ -117,6 +118,21 @@ public class CameraAnchorEntity extends Entity {
     }
     public float getOffsetZ() {
         return this.entityData.get(DATA_OFFSET_Z);
+    }
+
+    public String getCamTag() {
+        String t = this.entityData.get(DATA_CAM_TAG);
+        return t == null ? "" : t;
+    }
+
+    public void setCamTag(String tag) {
+        this.entityData.set(DATA_CAM_TAG, tag == null ? "" : tag);
+    }
+
+    public void setLocalPose(float pitch, float yaw, float roll) {
+        this.entityData.set(DATA_LOCAL_PITCH, pitch);
+        this.entityData.set(DATA_LOCAL_YAW, yaw);
+        this.entityData.set(DATA_LOCAL_ROLL, roll);
     }
 
     public void setOffset(float x, float y, float z) {
@@ -149,14 +165,96 @@ public class CameraAnchorEntity extends Entity {
     }
 
     @Override
+    public void remove(RemovalReason reason) {
+        dropChunkTicket();
+        super.remove(reason);
+    }
+
+    @Override
     public void tick() {
         super.tick();
         this.setDeltaMovement(0, 0, 0);
         // cameramixin
         if (this.level().isClientSide) {
             dev.bapmain.sablecamera.client.CameraAnchorClientHandler.snapToRenderPose(this);
+            return;
         }
-        return;
+
+        if (--snapCooldown > 0) return;
+        snapCooldown = 2; // ~10 Hz cheap track
+
+        UUID subId = getAttachedSubLevelId();
+        if (subId == null) return;
+
+        SubLevel sub = findServerSubLevel(subId);
+        if (sub == null) return;
+
+        var pose = sub.logicalPose();
+        var rp = pose.rotationPoint();
+
+        Vector3d localPos = new Vector3d(
+                rp.x() + getLocalX() + getOffsetX(),
+                rp.y() + getLocalY() + getOffsetY(),
+                rp.z() + getLocalZ() + getOffsetZ()
+        );
+        pose.transformPosition(localPos);
+
+        if (Math.abs(localPos.x) > 1.0e6
+                || Math.abs(localPos.y) > 1.0e6
+                || Math.abs(localPos.z) > 1.0e6) {
+            return;
+        }
+
+        double dx = localPos.x - this.getX();
+        double dy = localPos.y - this.getY();
+        double dz = localPos.z - this.getZ();
+        if (dx * dx + dy * dy + dz * dz < 0.01) {
+            refreshChunkTicket();
+            return;
+        }
+
+        this.setPos(localPos.x, localPos.y, localPos.z);
+        this.xo = localPos.x;
+        this.yo = localPos.y;
+        this.zo = localPos.z;
+        this.xOld = localPos.x;
+        this.yOld = localPos.y;
+        this.zOld = localPos.z;
+
+        refreshChunkTicket();
+    }
+
+    private void refreshChunkTicket() {
+        if (this.level().isClientSide) return;
+        if (!(this.level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
+
+        var chunk = new net.minecraft.world.level.ChunkPos(this.blockPosition());
+
+        if (ticketChunk != null && ticketChunk.equals(chunk)) {
+            return;
+        }
+
+        if (ticketChunk != null) {
+            sl.getChunkSource().removeRegionTicket(
+                    net.minecraft.server.level.TicketType.FORCED,
+                    ticketChunk, 1, ticketChunk);
+        }
+
+        sl.getChunkSource().addRegionTicket(
+                net.minecraft.server.level.TicketType.FORCED,
+                chunk, 1, chunk);
+        ticketChunk = chunk;
+    }
+
+    private void dropChunkTicket() {
+        if (this.level().isClientSide) return;
+        if (!(this.level() instanceof net.minecraft.server.level.ServerLevel sl)) return;
+        if (ticketChunk == null) return;
+
+        sl.getChunkSource().removeRegionTicket(
+                net.minecraft.server.level.TicketType.FORCED,
+                ticketChunk, 1, ticketChunk);
+        ticketChunk = null;
     }
 
     @Nullable
@@ -193,6 +291,9 @@ public class CameraAnchorEntity extends Entity {
         if (tag.contains("LocalPitch")) {
             this.setLocalPose(tag.getFloat("LocalPitch"), tag.getFloat("LocalYaw"), tag.getFloat("LocalRoll"));
         }
+        if (tag.contains("CamTag")) {
+            setCamTag(tag.getString("CamTag"));
+        }
     }
 
     @Override
@@ -210,7 +311,35 @@ public class CameraAnchorEntity extends Entity {
         tag.putFloat("LocalPitch", getLocalPitch());
         tag.putFloat("LocalYaw", getLocalYaw());
         tag.putFloat("LocalRoll", getLocalRoll());
+        if (!getCamTag().isEmpty()) {
+            tag.putString("CamTag", getCamTag());
+        }
     }
+
+    @Override
+    public void onAddedToLevel() {
+        super.onAddedToLevel();
+        if (!level().isClientSide) LIVE.add(this);
+    }
+
+    @Override
+    public void onRemovedFromLevel() {
+        super.onRemovedFromLevel();
+        LIVE.remove(this);
+    }
+
+    @Override
+    public boolean broadcastToPlayer(ServerPlayer player) {
+        return true;
+    }
+
+    @Override
+    public boolean isAlwaysTicking() {
+        return true;
+    }
+
+    @Override
+    public boolean shouldBeSaved() { return true; }
 
     @Override
     public boolean isPickable() {

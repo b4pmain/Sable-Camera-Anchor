@@ -30,7 +30,7 @@ public class ViewSessionHandler {
 
         sessions.remove(player.getUUID());
         CameraCommands.getFollowTargets().remove(player.getUUID());
-        PacketDistributor.sendToPlayer(player, new FollowCameraPayload(null));
+        PacketDistributor.sendToPlayer(player, FollowCameraPayload.clear());
         PacketDistributor.sendToPlayer(player, CameraPosePayload.clear());
 
         player.teleportTo(state.x, state.y, state.z);

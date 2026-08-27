@@ -36,6 +36,7 @@ public class CameraAnchorRenderer extends EntityRenderer<CameraAnchorEntity> {
     @Override
     public void render(CameraAnchorEntity entity, float entityYaw, float partialTick,
                        PoseStack poseStack, MultiBufferSource buffer, int light) {
+        CameraCatalog.remember(entity);
         if (!entity.isCameraVisible()) {
             return;
         }

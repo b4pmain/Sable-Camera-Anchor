@@ -12,6 +12,7 @@ import net.minecraft.world.entity.Entity;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import org.joml.Vector3d;
 
@@ -109,5 +110,26 @@ public class CameraAnchorClientHandler {
             }
         }
         return null;
+    }
+
+    @SubscribeEvent
+    public static void onJoin(net.neoforged.neoforge.event.entity.EntityJoinLevelEvent event) {
+        if (!event.getLevel().isClientSide) return;
+        if (event.getEntity() instanceof CameraAnchorEntity a) {
+            CameraCatalog.remember(a);
+            System.out.println("[SableCamera] catalog + " + CameraCatalog.all().keySet());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onClientTick(ClientTickEvent.Post event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+
+        if (ReplayCompat.isInReplay()
+                && ReplayFollowCache.isActive()
+                && mc.options.keyShift.isDown()) {
+            ReplayFollowCache.clear();
+        }
     }
 }

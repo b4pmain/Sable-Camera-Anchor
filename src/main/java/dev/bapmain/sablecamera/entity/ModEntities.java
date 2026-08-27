@@ -17,7 +17,7 @@ public class ModEntities {
             ENTITY_TYPES.register("camera_anchor", () ->
                     EntityType.Builder.of(CameraAnchorEntity::new, MobCategory.MISC)
                             .sized(0.5f, 0.5f)
-                            .clientTrackingRange(10)
+                            .clientTrackingRange(256)
                             .updateInterval(1)
                             .fireImmune()
                             .build("camera_anchor")   // ← just the string name
