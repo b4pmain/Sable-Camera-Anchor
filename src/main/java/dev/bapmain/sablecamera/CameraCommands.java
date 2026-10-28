@@ -491,6 +491,45 @@ public class CameraCommands {
         return 1;
     }
 
+    public static int cycleCamera(ServerPlayer player, int step) {
+        ServerLevel level = player.serverLevel();
+        List<CameraAnchorEntity> attached = new ArrayList<>();
+        for (Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof CameraAnchorEntity anchor && anchor.getAttachedSubLevelId() != null) {
+                attached.add(anchor);
+            }
+        }
+
+        if (attached.isEmpty()) {
+            player.displayClientMessage(Component.literal("No cameras available").withStyle(ChatFormatting.RED), true);
+            return 0;
+        }
+
+        UUID currentId = FOLLOW_TARGETS.get(player.getUUID());
+        int currentIndex = -1;
+        for (int i = 0; i < attached.size(); i++) {
+            if (attached.get(i).getUUID().equals(currentId)) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        int n = attached.size();
+        int nextIndex = currentIndex < 0 ? 0 : Math.floorMod(currentIndex + step, n);
+        CameraAnchorEntity target = attached.get(nextIndex);
+
+        FOLLOW_TARGETS.put(player.getUUID(), target.getUUID());
+        PacketDistributor.sendToPlayer(player, FollowCameraPayload.of(target));
+
+        String name = nameOf(target);
+        if (name.isEmpty()) {
+            name = "cam-" + target.getUUID().toString().substring(0, 8);
+        }
+        player.displayClientMessage(Component.literal("Camera: " + name + " (" + (nextIndex + 1) + "/" + n + ")")
+                .withStyle(ChatFormatting.AQUA), true);
+        return 1;
+    }
+
     private static int exitView(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         if (!ViewSessionHandler.endView(player, true)) {

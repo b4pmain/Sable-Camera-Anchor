@@ -2,10 +2,12 @@ package dev.bapmain.sablecamera.client;
 
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.math.CameraMath;
+import dev.bapmain.sablecamera.network.CycleCameraPayload;
 import dev.bapmain.sablecamera.network.ExitViewPayload;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
@@ -20,6 +22,8 @@ import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Vector3d;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @EventBusSubscriber(modid = "sablecamera", value = Dist.CLIENT)
@@ -141,5 +145,44 @@ public class CameraAnchorClientHandler {
                 mc.player.displayClientMessage(Component.literal("Exited camera view"), true);
             }
         }
+
+        int cycleStep = 0;
+        while (ClientSetup.PREV_CAMERA_KEY.consumeClick()) {
+            cycleStep--;
+        }
+        while (ClientSetup.NEXT_CAMERA_KEY.consumeClick()) {
+            cycleStep++;
+        }
+
+        if (cycleStep != 0) {
+            if (ReplayCompat.isInReplay() && ReplayFollowCache.isActive()) {
+                cycleReplayCamera(mc, cycleStep);
+            } else if (!ReplayCompat.isInReplay() && (CameraFollowClient.isViewing() || CameraPoseClient.isActive())) {
+                PacketDistributor.sendToServer(new CycleCameraPayload(cycleStep));
+            }
+        }
+    }
+
+    private static void cycleReplayCamera(Minecraft mc, int step) {
+        List<String> tags = new ArrayList<>(CameraCatalog.all().keySet());
+        if (tags.isEmpty()) {
+            mc.player.displayClientMessage(Component.literal("No remembered cameras").withStyle(ChatFormatting.RED), true);
+            return;
+        }
+        int currentIndex = tags.indexOf(ReplayFollowCache.activeTag());
+        int n = tags.size();
+        int nextIndex = currentIndex < 0 ? 0 : Math.floorMod(currentIndex + step, n);
+        String nextTag = tags.get(nextIndex);
+        CameraCatalog.Entry e = CameraCatalog.get(nextTag);
+        if (e == null) return;
+
+        CameraOrientState.clear();
+        ReplayFollowCache.apply(
+                nextTag,
+                e.subId(), e.lx(), e.ly(), e.lz(),
+                e.ox(), e.oy(), e.oz(),
+                e.pitch(), e.yaw(), e.roll(), e.fov());
+        mc.player.displayClientMessage(Component.literal("Camera: " + nextTag + " (" + (nextIndex + 1) + "/" + n + ")")
+                .withStyle(ChatFormatting.AQUA), true);
     }
 }

@@ -11,7 +11,8 @@ public final class ModNetwork {
     public static void register(RegisterPayloadHandlersEvent event) {
         // "2": CameraPosePayload carries a quaternion instead of yaw/pitch/roll
         // "3": FOV on Follow/CameraPose payloads, C2S ExitViewPayload
-        PayloadRegistrar registrar = event.registrar(SableCameraMod.MOD_ID).versioned("3");
+        // "4": C2S CycleCameraPayload
+        PayloadRegistrar registrar = event.registrar(SableCameraMod.MOD_ID).versioned("4");
 
         registrar.playToClient(
                 FollowCameraPayload.TYPE,
@@ -29,6 +30,12 @@ public final class ModNetwork {
                 ExitViewPayload.TYPE,
                 ExitViewPayload.CODEC,
                 ExitViewPayload::handle
+        );
+
+        registrar.playToServer(
+                CycleCameraPayload.TYPE,
+                CycleCameraPayload.CODEC,
+                CycleCameraPayload::handle
         );
     }
 }

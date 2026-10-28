@@ -33,7 +33,9 @@ public class ClientCameraCommands {
                                         ctx.getSource().sendFailure(Component.literal("Unknown camera: " + tag));
                                         return 0;
                                     }
+                                    CameraOrientState.clear();
                                     ReplayFollowCache.apply(
+                                            tag,
                                             e.subId(), e.lx(), e.ly(), e.lz(),
                                             e.ox(), e.oy(), e.oz(),
                                             e.pitch(), e.yaw(), e.roll(), e.fov());

@@ -11,11 +11,14 @@ public final class ReplayFollowCache {
     private static float ox, oy, oz;
     private static float pitch, yaw, roll;
     private static float fov = CameraAnchorEntity.DEFAULT_FOV;
+    private static String activeTag = "";
 
     private ReplayFollowCache() {}
 
     public static void capture(CameraAnchorEntity a) {
+        String tag = CameraCatalog.nameOf(a.getUUID());
         apply(
+                tag.isEmpty() ? a.getCamTag() : tag,
                 a.getAttachedSubLevelId(),
                 a.getLocalX(), a.getLocalY(), a.getLocalZ(),
                 a.getOffsetX(), a.getOffsetY(), a.getOffsetZ(),
@@ -29,6 +32,16 @@ public final class ReplayFollowCache {
                              float ox, float oy, float oz,
                              float pitch, float yaw, float roll,
                              float fov) {
+        apply("", sub, lx, ly, lz, ox, oy, oz, pitch, yaw, roll, fov);
+    }
+
+    public static void apply(String tag,
+                             UUID sub,
+                             float lx, float ly, float lz,
+                             float ox, float oy, float oz,
+                             float pitch, float yaw, float roll,
+                             float fov) {
+        ReplayFollowCache.activeTag = tag == null ? "" : tag;
         ReplayFollowCache.subId = sub;
         ReplayFollowCache.lx = lx;
         ReplayFollowCache.ly = ly;
@@ -46,9 +59,11 @@ public final class ReplayFollowCache {
     public static void clear() {
         active = false;
         subId = null;
+        activeTag = "";
     }
 
     public static boolean isActive() { return active; }
+    public static String activeTag() { return activeTag; }
     public static UUID subId() { return subId; }
     public static float lx() { return lx; }
     public static float ly() { return ly; }

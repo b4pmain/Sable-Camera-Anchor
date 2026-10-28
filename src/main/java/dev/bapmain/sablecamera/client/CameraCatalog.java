@@ -97,5 +97,6 @@ public final class CameraCatalog {
     }
 
     public static Entry get(String tag) { return BY_TAG.get(tag); }
+    public static String nameOf(UUID entityId) { return NAME_BY_ENTITY.getOrDefault(entityId, ""); }
     public static Map<String, Entry> all() { return BY_TAG; }
 }

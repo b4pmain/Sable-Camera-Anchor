@@ -24,6 +24,22 @@ public class ClientSetup {
             KEY_CATEGORY
     );
 
+    public static final KeyMapping PREV_CAMERA_KEY = new KeyMapping(
+            "key.sablecamera.prev_camera",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_LEFT,
+            KEY_CATEGORY
+    );
+
+    public static final KeyMapping NEXT_CAMERA_KEY = new KeyMapping(
+            "key.sablecamera.next_camera",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_RIGHT,
+            KEY_CATEGORY
+    );
+
     @SubscribeEvent
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.CAMERA_ANCHOR.get(), CameraAnchorRenderer::new);
@@ -32,6 +48,8 @@ public class ClientSetup {
     @SubscribeEvent
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(EXIT_VIEW_KEY);
+        event.register(PREV_CAMERA_KEY);
+        event.register(NEXT_CAMERA_KEY);
     }
 
 }

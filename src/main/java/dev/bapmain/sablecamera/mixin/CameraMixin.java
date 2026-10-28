@@ -61,7 +61,9 @@ public abstract class CameraMixin {
         if (entity instanceof CameraAnchorEntity direct) {
             anchor = direct;
             CameraCatalog.remember(direct);
-            ReplayFollowCache.capture(direct);
+            if (!replay || !ReplayFollowCache.isActive()) {
+                ReplayFollowCache.capture(direct);
+            }
         } else if (liveSelf) {
             anchor = resolveAnchor(entity);
         }
@@ -71,11 +73,22 @@ public abstract class CameraMixin {
         float lp, lyaw, lr, fov;
         int orientKey;
 
-        if (anchor != null) {
+        if (replay && ReplayFollowCache.isActive()) {
+            subId = ReplayFollowCache.subId();
+            lx = ReplayFollowCache.lx();
+            ly = ReplayFollowCache.ly();
+            lz = ReplayFollowCache.lz();
+            ox = ReplayFollowCache.ox();
+            oy = ReplayFollowCache.oy();
+            oz = ReplayFollowCache.oz();
+            lp = ReplayFollowCache.pitch();
+            lyaw = ReplayFollowCache.yaw();
+            lr = ReplayFollowCache.roll();
+            fov = ReplayFollowCache.fov();
+            orientKey = Integer.MAX_VALUE;
+
+        } else if (anchor != null) {
             CameraFollowClient.captureFrom(anchor);
-            if (replay) {
-                ReplayFollowCache.capture(anchor);
-            }
 
             subId = anchor.getAttachedSubLevelId();
             lx = anchor.getLocalX();
@@ -103,20 +116,6 @@ public abstract class CameraMixin {
             lr = CameraFollowClient.roll();
             fov = CameraFollowClient.fov();
             orientKey = Integer.MAX_VALUE - 1;
-
-        } else if (replay && ReplayFollowCache.isActive()) {
-            subId = ReplayFollowCache.subId();
-            lx = ReplayFollowCache.lx();
-            ly = ReplayFollowCache.ly();
-            lz = ReplayFollowCache.lz();
-            ox = ReplayFollowCache.ox();
-            oy = ReplayFollowCache.oy();
-            oz = ReplayFollowCache.oz();
-            lp = ReplayFollowCache.pitch();
-            lyaw = ReplayFollowCache.yaw();
-            lr = ReplayFollowCache.roll();
-            fov = ReplayFollowCache.fov();
-            orientKey = Integer.MAX_VALUE;
 
         } else {
             sablecamera$applyServerPoseIfLive(liveSelf, partialTick);
