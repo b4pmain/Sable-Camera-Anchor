@@ -11,6 +11,7 @@ import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.entity.ModEntities;
 import dev.bapmain.sablecamera.network.FollowCameraPayload;
 import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
@@ -21,7 +22,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
@@ -43,10 +43,14 @@ public class CameraCommands {
 
     private static final String USAGE_ADDCAM = "/camanchor addcam <tag> [pos]";
     private static final String USAGE_DELCAM = "/camanchor delcam <tag|all>";
-    private static final String USAGE_ANGLE  = "/camanchor angle <pitch> <yaw> [roll] <tag|all>";
+    private static final String USAGE_ANGLE  = "/camanchor angle <pitch> <yaw> [roll] [fov] <tag|all>";
     private static final String USAGE_OFFSET = "/camanchor offset <x> <y> <z> <tag|all>";
+    private static final String USAGE_FOV    = "/camanchor fov <fov> <tag|all>";
     private static final String USAGE_VIEW   = "/camanchor view <tag>";
     private static final String USAGE_SHOW   = "/camanchor show <true|false>";
+
+    /** Op level for commands that create / modify cameras. view / exit / list are open to everyone. */
+    private static final int ADMIN_LEVEL = 2;
 
     private static final List<String> GRID_POSITIONS = List.of(
             "topleft", "topcenter", "topright",
@@ -67,9 +71,10 @@ public class CameraCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("camanchor")
-                .requires(s -> s.hasPermission(2))
+                // no root permission: each admin subcommand requires ADMIN_LEVEL itself
 
                 .then(Commands.literal("addcam")
+                        .requires(CameraCommands::isAdmin)
                         .executes(ctx -> usage(ctx.getSource(), "Missing camera tag.", USAGE_ADDCAM))
                         .then(Commands.argument("tag", StringArgumentType.string())
                                 // no pos → player position
@@ -89,6 +94,7 @@ public class CameraCommands {
                 )
 
                 .then(Commands.literal("delcam")
+                        .requires(CameraCommands::isAdmin)
                         // no args → error
                         .executes(ctx -> usage(ctx.getSource(),
                                 "Input a tag name first (use \"all\" to delete all).", USAGE_DELCAM))
@@ -99,9 +105,11 @@ public class CameraCommands {
                         )
                 )
 
-                // Children order matters: "roll" is registered before "tag" so that
-                // "/angle 10 0 5" parses 5 as roll (→ missing tag) instead of a tag named "5".
+                // Children order matters: numeric nodes are registered before "tag" so that
+                // "/angle 10 0 5" parses 5 as roll (→ missing tag) instead of a tag named "5"
+                // (same for fov after roll). Omitted roll = 0, omitted fov = unchanged.
                 .then(Commands.literal("angle")
+                        .requires(CameraCommands::isAdmin)
                         .executes(ctx -> usage(ctx.getSource(),
                                 "Missing pitch, yaw and camera tag.", USAGE_ANGLE))
                         .then(Commands.argument("pitch", FloatArgumentType.floatArg())
@@ -113,12 +121,24 @@ public class CameraCommands {
                                         .then(Commands.argument("roll", FloatArgumentType.floatArg())
                                                 .executes(ctx -> usage(ctx.getSource(),
                                                         "Missing camera tag (use \"all\" to target every camera).", USAGE_ANGLE))
+                                                .then(Commands.argument("fov", fovArg())
+                                                        .executes(ctx -> usage(ctx.getSource(),
+                                                                "Missing camera tag (use \"all\" to target every camera).", USAGE_ANGLE))
+                                                        .then(Commands.argument("tag", StringArgumentType.string())
+                                                                .suggests(SUGGEST_TAGS_OR_ALL)
+                                                                .executes(ctx -> setAngle(ctx.getSource(),
+                                                                        FloatArgumentType.getFloat(ctx, "pitch"),
+                                                                        FloatArgumentType.getFloat(ctx, "yaw"),
+                                                                        FloatArgumentType.getFloat(ctx, "roll"),
+                                                                        FloatArgumentType.getFloat(ctx, "fov"),
+                                                                        StringArgumentType.getString(ctx, "tag")))))
                                                 .then(Commands.argument("tag", StringArgumentType.string())
                                                         .suggests(SUGGEST_TAGS_OR_ALL)
                                                         .executes(ctx -> setAngle(ctx.getSource(),
                                                                 FloatArgumentType.getFloat(ctx, "pitch"),
                                                                 FloatArgumentType.getFloat(ctx, "yaw"),
                                                                 FloatArgumentType.getFloat(ctx, "roll"),
+                                                                null,
                                                                 StringArgumentType.getString(ctx, "tag")))))
                                         .then(Commands.argument("tag", StringArgumentType.string())
                                                 .suggests(SUGGEST_TAGS_OR_ALL)
@@ -126,9 +146,26 @@ public class CameraCommands {
                                                         FloatArgumentType.getFloat(ctx, "pitch"),
                                                         FloatArgumentType.getFloat(ctx, "yaw"),
                                                         0.0f,
+                                                        null,
                                                         StringArgumentType.getString(ctx, "tag")))))))
 
+                .then(Commands.literal("fov")
+                        .requires(CameraCommands::isAdmin)
+                        .executes(ctx -> usage(ctx.getSource(), "Missing fov and camera tag.", USAGE_FOV))
+                        .then(Commands.argument("fov", fovArg())
+                                .executes(ctx -> usage(ctx.getSource(),
+                                        "Missing camera tag (use \"all\" to target every camera).", USAGE_FOV))
+                                .then(Commands.argument("tag", StringArgumentType.string())
+                                        .suggests(SUGGEST_TAGS_OR_ALL)
+                                        .executes(ctx -> setFov(ctx.getSource(),
+                                                FloatArgumentType.getFloat(ctx, "fov"),
+                                                StringArgumentType.getString(ctx, "tag"))))))
+
+                .then(Commands.literal("exit")
+                        .executes(ctx -> exitView(ctx.getSource())))
+
                 .then(Commands.literal("offset")
+                        .requires(CameraCommands::isAdmin)
                         .executes(ctx -> usage(ctx.getSource(),
                                 "Missing x, y, z and camera tag.", USAGE_OFFSET))
                         .then(Commands.argument("x", DoubleArgumentType.doubleArg())
@@ -175,6 +212,7 @@ public class CameraCommands {
                         })
                 )
                 .then(Commands.literal("show")
+                        .requires(CameraCommands::isAdmin)
                         .executes(ctx -> usage(ctx.getSource(), "Missing true/false.", USAGE_SHOW))
                         .then(Commands.argument("value", BoolArgumentType.bool())
                                 .executes(ctx -> {
@@ -348,6 +386,7 @@ public class CameraCommands {
 
     private static int setAngle(CommandSourceStack source,
                                 float pitch, float yaw, float roll,
+                                @Nullable Float fov,
                                 String tag) {
         List<CameraAnchorEntity> cams = findCameras(source.getLevel(), tag);
         if (cams.isEmpty()) {
@@ -355,10 +394,32 @@ public class CameraCommands {
         }
         for (CameraAnchorEntity anchor : cams) {
             anchor.setLocalPose(pitch, yaw, roll);
+            if (fov != null) {
+                anchor.setFov(fov);
+            }
         }
 
-        String msg = String.format("Set angle pitch=%.1f yaw=%.1f roll=%.1f on %d camera(s)",
-                pitch, yaw, roll, cams.size());
+        String msg = fov == null
+                ? String.format("Set angle pitch=%.1f yaw=%.1f roll=%.1f on %d camera(s)",
+                        pitch, yaw, roll, cams.size())
+                : String.format("Set angle pitch=%.1f yaw=%.1f roll=%.1f fov=%.1f on %d camera(s)",
+                        pitch, yaw, roll, fov, cams.size());
+        refreshViewers(source, cams);
+        source.sendSuccess(() -> Component.literal(msg), false);
+        return cams.size();
+    }
+
+    private static int setFov(CommandSourceStack source, float fov, String tag) {
+        List<CameraAnchorEntity> cams = findCameras(source.getLevel(), tag);
+        if (cams.isEmpty()) {
+            return noMatch(source, tag);
+        }
+        for (CameraAnchorEntity anchor : cams) {
+            anchor.setFov(fov);
+        }
+
+        refreshViewers(source, cams);
+        String msg = String.format("Set fov=%.1f on %d camera(s)", fov, cams.size());
         source.sendSuccess(() -> Component.literal(msg), false);
         return cams.size();
     }
@@ -372,11 +433,29 @@ public class CameraCommands {
             anchor.setOffset((float) x, (float) y, (float) z);
         }
 
+        refreshViewers(source, cams);
         final int finalCount = cams.size();
         source.sendSuccess(() -> Component.literal(
                 "Set offset to " + x + ", " + y + ", " + z + " on " + finalCount + " camera(s)"
         ), false);
         return finalCount;
+    }
+
+    /**
+     * Re-sends the follow payload to anyone currently viewing one of {@code cams}, so the
+     * client's captured fallback (used when the entity isn't loaded client-side) stays current.
+     */
+    private static void refreshViewers(CommandSourceStack source, List<CameraAnchorEntity> cams) {
+        if (FOLLOW_TARGETS.isEmpty()) return;
+        for (CameraAnchorEntity anchor : cams) {
+            for (var entry : FOLLOW_TARGETS.entrySet()) {
+                if (!entry.getValue().equals(anchor.getUUID())) continue;
+                ServerPlayer viewer = source.getServer().getPlayerList().getPlayer(entry.getKey());
+                if (viewer != null) {
+                    PacketDistributor.sendToPlayer(viewer, FollowCameraPayload.of(anchor));
+                }
+            }
+        }
     }
 
     private static int viewCamera(CommandSourceStack source, String tag) throws CommandSyntaxException {
@@ -388,57 +467,62 @@ public class CameraCommands {
             return noMatch(source, tag);
         }
 
-        if (target.getAttachedSubLevelId() == null) {
+        UUID subId = target.getAttachedSubLevelId();
+        if (subId == null) {
             source.sendFailure(Component.literal("Camera '" + tag + "' is not attached to a sub-level")
                     .withStyle(ChatFormatting.RED));
             return 0;
         }
 
+        // Non-spectator view: gamemode and position are untouched, the client only moves
+        // the render camera. Player keeps moving / interacting as usual.
         FOLLOW_TARGETS.put(player.getUUID(), target.getUUID());
-
-        // first view in sesh only return
-        if (!VIEW_SESSIONS.containsKey(player.getUUID())) {
-            VIEW_SESSIONS.put(player.getUUID(), new ViewState(player));
-        }
-
-        if (player.gameMode.getGameModeForPlayer() != GameType.SPECTATOR) {
-            player.setGameMode(GameType.SPECTATOR);
-        }
-
-        // no more player.setCamera
-
         PacketDistributor.sendToPlayer(player, FollowCameraPayload.of(target));
 
         source.sendSuccess(() -> Component.literal(
-                "Viewing camera: " + tag + " (crouch to exit)"), false);
+                "Viewing camera: " + tag + " (Exit Camera key or /camanchor exit to stop)"), false);
+
+        if (!isSubLevelLoaded(level, subId)) {
+            source.sendSuccess(() -> Component.literal(
+                    "Warning: the ship carrying '" + tag + "' isn't loaded on the server. "
+                            + "The view will stay on you until it loads (forceload the ship's area).")
+                    .withStyle(ChatFormatting.YELLOW), false);
+        }
         return 1;
     }
 
-    private static final Map<UUID, ViewState> VIEW_SESSIONS = new HashMap<>();
+    private static int exitView(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        if (!ViewSessionHandler.endView(player, true)) {
+            source.sendFailure(Component.literal("You are not viewing a camera"));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Stopped viewing camera"), false);
+        return 1;
+    }
+
+    private static boolean isSubLevelLoaded(ServerLevel level, UUID subId) {
+        try {
+            SubLevelContainer container = SubLevelContainer.getContainer(level);
+            return container != null && container.getSubLevel(subId) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isAdmin(CommandSourceStack source) {
+        return source.hasPermission(ADMIN_LEVEL);
+    }
+
+    private static FloatArgumentType fovArg() {
+        return FloatArgumentType.floatArg(CameraAnchorEntity.MIN_FOV, CameraAnchorEntity.MAX_FOV);
+    }
+
     /** player UUID → camera entity UUID */
     public static final Map<UUID, UUID> FOLLOW_TARGETS = new HashMap<>();
 
     static Map<UUID, UUID> getFollowTargets() {
         return FOLLOW_TARGETS;
-    }
-
-    protected static class ViewState {
-        final GameType gameMode;
-        final double x, y, z;
-        final float yRot, xRot;
-
-        ViewState(ServerPlayer player) {
-            this.gameMode = player.gameMode.getGameModeForPlayer();
-            this.x = player.getX();
-            this.y = player.getY();
-            this.z = player.getZ();
-            this.yRot = player.getYRot();
-            this.xRot = player.getXRot();
-        }
-    }
-
-    static Map<UUID, ViewState> getViewSessions() {
-        return VIEW_SESSIONS;
     }
 
     private static Vec3 getPlacementOffset(String pos) {

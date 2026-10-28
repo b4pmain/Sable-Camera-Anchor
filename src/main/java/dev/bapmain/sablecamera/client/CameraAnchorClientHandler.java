@@ -2,16 +2,22 @@ package dev.bapmain.sablecamera.client;
 
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.math.CameraMath;
+import dev.bapmain.sablecamera.network.ExitViewPayload;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
+import net.neoforged.neoforge.client.event.ViewportEvent;
+import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Vector3d;
 
 import java.util.UUID;
@@ -61,7 +67,23 @@ public class CameraAnchorClientHandler {
         CameraFollowClient.clear();
         CameraPoseClient.clear();
         CameraOrientState.clear();
+        ActiveView.beginFrame();
     }
+
+    @SubscribeEvent
+    public static void onComputeFov(ViewportEvent.ComputeFov event) {
+        if (ActiveView.isOverriding() && event.usedConfiguredFov()) {
+            event.setFOV(ActiveView.fov());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onRenderGuiLayer(RenderGuiLayerEvent.Pre event) {
+        if (ActiveView.isLiveOverride() && VanillaGuiLayers.CROSSHAIR.equals(event.getName())) {
+            event.setCanceled(true);
+        }
+    }
+
     public static ClientSubLevel findClientSubLevel(UUID id) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return null;
@@ -107,6 +129,17 @@ public class CameraAnchorClientHandler {
                 && ReplayFollowCache.isActive()
                 && mc.options.keyShift.isDown()) {
             ReplayFollowCache.clear();
+        }
+
+        while (ClientSetup.EXIT_VIEW_KEY.consumeClick()) {
+            if (ReplayCompat.isInReplay() && ReplayFollowCache.isActive()) {
+                ReplayFollowCache.clear();
+                mc.player.displayClientMessage(Component.literal("Exited replay camera view"), true);
+            } else if (CameraFollowClient.isViewing() || CameraPoseClient.isActive()) {
+                resetLiveView();
+                PacketDistributor.sendToServer(ExitViewPayload.INSTANCE);
+                mc.player.displayClientMessage(Component.literal("Exited camera view"), true);
+            }
         }
     }
 }

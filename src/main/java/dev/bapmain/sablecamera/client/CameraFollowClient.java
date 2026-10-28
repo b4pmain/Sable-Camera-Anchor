@@ -1,7 +1,8 @@
 package dev.bapmain.sablecamera.client;
 
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
+
 import java.util.UUID;
 
 public final class CameraFollowClient {
@@ -10,6 +11,7 @@ public final class CameraFollowClient {
     private static boolean captured = false;
     private static UUID subId;
     private static float lx, ly, lz, ox, oy, oz, pitch, yaw, roll;
+    private static float fov = CameraAnchorEntity.DEFAULT_FOV;
 
     private CameraFollowClient() {}
 
@@ -28,12 +30,18 @@ public final class CameraFollowClient {
         clearCapture();
     }
 
+    /** True while a live (non-replay) camera view has been requested by the server. */
+    public static boolean isViewing() {
+        return followId != null || captured;
+    }
+
     public static void captureFrom(CameraAnchorEntity a) {
         followId = a.getUUID();
         subId = a.getAttachedSubLevelId();
         lx = a.getLocalX(); ly = a.getLocalY(); lz = a.getLocalZ();
         ox = a.getOffsetX(); oy = a.getOffsetY(); oz = a.getOffsetZ();
         pitch = a.getLocalPitch(); yaw = a.getLocalYaw(); roll = a.getLocalRoll();
+        fov = a.getFov();
         captured = subId != null;
     }
 
@@ -44,11 +52,12 @@ public final class CameraFollowClient {
 
     public static void applyAttach(UUID sub, float lx, float ly, float lz,
                                    float ox, float oy, float oz,
-                                   float pitch, float yaw, float roll) {
+                                   float pitch, float yaw, float roll, float fov) {
         subId = sub;
         CameraFollowClient.lx = lx; CameraFollowClient.ly = ly; CameraFollowClient.lz = lz;
         CameraFollowClient.ox = ox; CameraFollowClient.oy = oy; CameraFollowClient.oz = oz;
         CameraFollowClient.pitch = pitch; CameraFollowClient.yaw = yaw; CameraFollowClient.roll = roll;
+        CameraFollowClient.fov = fov;
         captured = sub != null;
     }
 
@@ -63,4 +72,5 @@ public final class CameraFollowClient {
     public static float pitch() { return pitch; }
     public static float yaw() { return yaw; }
     public static float roll() { return roll; }
+    public static float fov() { return fov; }
 }

@@ -10,6 +10,7 @@ public final class ReplayFollowCache {
     private static float lx, ly, lz;
     private static float ox, oy, oz;
     private static float pitch, yaw, roll;
+    private static float fov = CameraAnchorEntity.DEFAULT_FOV;
 
     private ReplayFollowCache() {}
 
@@ -18,14 +19,16 @@ public final class ReplayFollowCache {
                 a.getAttachedSubLevelId(),
                 a.getLocalX(), a.getLocalY(), a.getLocalZ(),
                 a.getOffsetX(), a.getOffsetY(), a.getOffsetZ(),
-                a.getLocalPitch(), a.getLocalYaw(), a.getLocalRoll()
+                a.getLocalPitch(), a.getLocalYaw(), a.getLocalRoll(),
+                a.getFov()
         );
     }
 
     public static void apply(UUID sub,
                              float lx, float ly, float lz,
                              float ox, float oy, float oz,
-                             float pitch, float yaw, float roll) {
+                             float pitch, float yaw, float roll,
+                             float fov) {
         ReplayFollowCache.subId = sub;
         ReplayFollowCache.lx = lx;
         ReplayFollowCache.ly = ly;
@@ -36,6 +39,7 @@ public final class ReplayFollowCache {
         ReplayFollowCache.pitch = pitch;
         ReplayFollowCache.yaw = yaw;
         ReplayFollowCache.roll = roll;
+        ReplayFollowCache.fov = fov;
         active = sub != null;
     }
 
@@ -55,4 +59,5 @@ public final class ReplayFollowCache {
     public static float pitch() { return pitch; }
     public static float yaw() { return yaw; }
     public static float roll() { return roll; }
+    public static float fov() { return fov; }
 }

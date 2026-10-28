@@ -3,7 +3,6 @@ package dev.bapmain.sablecamera.network;
 import dev.bapmain.sablecamera.SableCameraMod;
 import dev.bapmain.sablecamera.client.CameraFollowClient;
 import dev.bapmain.sablecamera.client.CameraOrientState;
-import dev.bapmain.sablecamera.client.ReplayCompat;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -20,7 +19,8 @@ public record FollowCameraPayload(
         @Nullable UUID subId,
         float lx, float ly, float lz,
         float ox, float oy, float oz,
-        float pitch, float yaw, float roll
+        float pitch, float yaw, float roll,
+        float fov
 ) implements CustomPacketPayload {
 
     public static final Type<FollowCameraPayload> TYPE =
@@ -30,7 +30,8 @@ public record FollowCameraPayload(
             StreamCodec.of(FollowCameraPayload::write, FollowCameraPayload::read);
 
     public static FollowCameraPayload clear() {
-        return new FollowCameraPayload(null, false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        return new FollowCameraPayload(null, false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                CameraAnchorEntity.DEFAULT_FOV);
     }
 
     public static FollowCameraPayload of(CameraAnchorEntity a) {
@@ -40,7 +41,8 @@ public record FollowCameraPayload(
                 a.getAttachedSubLevelId(),
                 a.getLocalX(), a.getLocalY(), a.getLocalZ(),
                 a.getOffsetX(), a.getOffsetY(), a.getOffsetZ(),
-                a.getLocalPitch(), a.getLocalYaw(), a.getLocalRoll()
+                a.getLocalPitch(), a.getLocalYaw(), a.getLocalRoll(),
+                a.getFov()
         );
     }
 
@@ -53,19 +55,22 @@ public record FollowCameraPayload(
             buf.writeFloat(p.lx); buf.writeFloat(p.ly); buf.writeFloat(p.lz);
             buf.writeFloat(p.ox); buf.writeFloat(p.oy); buf.writeFloat(p.oz);
             buf.writeFloat(p.pitch); buf.writeFloat(p.yaw); buf.writeFloat(p.roll);
+            buf.writeFloat(p.fov);
         }
     }
 
     private static FollowCameraPayload read(FriendlyByteBuf buf) {
         UUID id = buf.readBoolean() ? buf.readUUID() : null;
         if (!buf.readBoolean()) {
-            return new FollowCameraPayload(id, false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new FollowCameraPayload(id, false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    CameraAnchorEntity.DEFAULT_FOV);
         }
         return new FollowCameraPayload(
                 id, true, buf.readUUID(),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(),
-                buf.readFloat(), buf.readFloat(), buf.readFloat()
+                buf.readFloat(), buf.readFloat(), buf.readFloat(),
+                buf.readFloat()
         );
     }
 
@@ -92,7 +97,8 @@ public record FollowCameraPayload(
                         payload.subId(),
                         payload.lx(), payload.ly(), payload.lz(),
                         payload.ox(), payload.oy(), payload.oz(),
-                        payload.pitch(), payload.yaw(), payload.roll()
+                        payload.pitch(), payload.yaw(), payload.roll(),
+                        payload.fov()
                 );
             }
         });

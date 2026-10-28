@@ -21,7 +21,8 @@ import java.util.UUID;
 public final class CameraCatalog {
     public record Entry(UUID subId, float lx, float ly, float lz,
                         float ox, float oy, float oz,
-                        float pitch, float yaw, float roll) {}
+                        float pitch, float yaw, float roll,
+                        float fov) {}
 
     private static final Map<String, Entry> BY_TAG = new LinkedHashMap<>();
     /** camera entity UUID → current catalog name */
@@ -90,7 +91,8 @@ public final class CameraCatalog {
                 a.getAttachedSubLevelId(),
                 a.getLocalX(), a.getLocalY(), a.getLocalZ(),
                 a.getOffsetX(), a.getOffsetY(), a.getOffsetZ(),
-                a.getLocalPitch(), a.getLocalYaw(), a.getLocalRoll()
+                a.getLocalPitch(), a.getLocalYaw(), a.getLocalRoll(),
+                a.getFov()
         );
     }
 

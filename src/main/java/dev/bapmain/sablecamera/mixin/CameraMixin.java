@@ -41,6 +41,7 @@ public abstract class CameraMixin {
     @Shadow private float xRot;
     @Shadow private float yRot;
     @Shadow private float roll;
+    @Shadow private boolean detached;
 
     @Unique private static final float[] sablecamera$euler = new float[3];
 
@@ -48,6 +49,8 @@ public abstract class CameraMixin {
     private void sablecamera$overrideForAnchor(BlockGetter level, Entity entity,
                                                boolean detached, boolean thirdPersonReverse,
                                                float partialTick, CallbackInfo ci) {
+
+        ActiveView.beginFrame();
 
         Minecraft mc = Minecraft.getInstance();
         boolean replay = ReplayCompat.isInReplay();
@@ -65,7 +68,7 @@ public abstract class CameraMixin {
 
         UUID subId;
         float lx, ly, lz, ox, oy, oz;
-        float lp, lyaw, lr;
+        float lp, lyaw, lr, fov;
         int orientKey;
 
         if (anchor != null) {
@@ -84,6 +87,7 @@ public abstract class CameraMixin {
             lp = anchor.getLocalPitch();
             lyaw = anchor.getLocalYaw();
             lr = anchor.getLocalRoll();
+            fov = anchor.getFov();
             orientKey = anchor.getId();
 
         } else if (!replay && CameraFollowClient.hasCapture()) {
@@ -97,6 +101,7 @@ public abstract class CameraMixin {
             lp = CameraFollowClient.pitch();
             lyaw = CameraFollowClient.yaw();
             lr = CameraFollowClient.roll();
+            fov = CameraFollowClient.fov();
             orientKey = Integer.MAX_VALUE - 1;
 
         } else if (replay && ReplayFollowCache.isActive()) {
@@ -110,6 +115,7 @@ public abstract class CameraMixin {
             lp = ReplayFollowCache.pitch();
             lyaw = ReplayFollowCache.yaw();
             lr = ReplayFollowCache.roll();
+            fov = ReplayFollowCache.fov();
             orientKey = Integer.MAX_VALUE;
 
         } else {
@@ -157,6 +163,7 @@ public abstract class CameraMixin {
         Quaternionf target = CameraMath.toMinecraftCamera(worldRot, new Quaternionf());
 
         sablecamera$applyRotation(CameraOrientState.get(orientKey).smoothToward(target));
+        sablecamera$markOverride(fov, liveSelf);
     }
 
     /** Far-view fallback: server-streamed world pose (live view of the local player only). */
@@ -170,6 +177,19 @@ public abstract class CameraMixin {
                 CameraPoseClient.y(partialTick),
                 CameraPoseClient.z(partialTick));
         sablecamera$applyRotation(CameraPoseClient.rotation(partialTick));
+        sablecamera$markOverride(CameraPoseClient.fov(), true);
+    }
+
+    /**
+     * Records the override for this frame. In live view the player is the actor: report the
+     * camera as detached so LevelRenderer draws the local player model (like third person).
+     */
+    @Unique
+    private void sablecamera$markOverride(float fov, boolean liveSelf) {
+        ActiveView.mark(fov, liveSelf);
+        if (liveSelf) {
+            this.detached = true;
+        }
     }
 
     /** Writes a Minecraft-frame rotation into the camera (mirrors Camera#setRotation). */

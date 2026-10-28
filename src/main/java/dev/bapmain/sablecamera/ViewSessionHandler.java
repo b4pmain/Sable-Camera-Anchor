@@ -6,35 +6,17 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+/**
+ * Server side of the (non-spectator) view session. Viewing no longer touches the player's
+ * gamemode or position: a session is just an entry in {@link CameraCommands#FOLLOW_TARGETS}
+ * plus the client-side render override. Exit is explicit (/camanchor exit or the Exit
+ * keybind → ExitViewPayload); sneaking is normal gameplay again.
+ */
 @EventBusSubscriber(modid = "sablecamera")
 public class ViewSessionHandler {
 
-    @SubscribeEvent
-    public static void onPlayerTick(PlayerTickEvent.Post event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) {
-            return;
-        }
-
-        if (!CameraCommands.getViewSessions().containsKey(player.getUUID())) {
-            return;
-        }
-
-        // sneak to exit
-        if (!player.isShiftKeyDown()) {
-            return;
-        }
-
-        endView(player, true);
-    }
-
-    /**
-     * Logging out mid-view used to leave the player stuck in spectator at the camera
-     * location on rejoin. PlayerLoggedOutEvent fires before the player is saved, so
-     * restoring here persists the original gamemode / position.
-     */
     @SubscribeEvent
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
@@ -55,34 +37,23 @@ public class ViewSessionHandler {
         CameraTrackingForcer.forget(event.getEntity().getUUID());
     }
 
+    public static boolean isViewing(ServerPlayer player) {
+        return CameraCommands.getFollowTargets().containsKey(player.getUUID());
+    }
+
     /**
-     * Ends the view session (if any): clears follow state, restores gamemode and position.
+     * Ends the view session (if any) and tells the client to drop its camera override.
      *
      * @param notifyClient false when the connection is going away (logout)
+     * @return true if the player was viewing
      */
-    static void endView(ServerPlayer player, boolean notifyClient) {
-        CameraCommands.getFollowTargets().remove(player.getUUID());
-        var state = CameraCommands.getViewSessions().remove(player.getUUID());
+    public static boolean endView(ServerPlayer player, boolean notifyClient) {
+        boolean wasViewing = CameraCommands.getFollowTargets().remove(player.getUUID()) != null;
 
         if (notifyClient) {
             PacketDistributor.sendToPlayer(player, FollowCameraPayload.clear());
             PacketDistributor.sendToPlayer(player, CameraPosePayload.clear());
         }
-
-        if (state == null) {
-            return;
-        }
-
-        player.teleportTo(state.x, state.y, state.z);
-        player.setYRot(state.yRot);
-        player.setXRot(state.xRot);
-
-        if (player.gameMode.getGameModeForPlayer() != state.gameMode) {
-            player.setGameMode(state.gameMode);
-        }
-
-        if (notifyClient) {
-            player.connection.resetPosition();
-        }
+        return wasViewing;
     }
 }

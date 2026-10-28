@@ -45,6 +45,12 @@ public class CameraAnchorEntity extends Entity {
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<String> DATA_CAM_TAG =
             SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<Float> DATA_FOV =
+            SynchedEntityData.defineId(CameraAnchorEntity.class, EntityDataSerializers.FLOAT);
+
+    public static final float DEFAULT_FOV = 90.0f;
+    public static final float MIN_FOV = 1.0f;
+    public static final float MAX_FOV = 170.0f;
 
     private int snapCooldown = 0;
     private net.minecraft.world.level.ChunkPos ticketChunk;
@@ -71,6 +77,7 @@ public class CameraAnchorEntity extends Entity {
         builder.define(DATA_LOCAL_ROLL, 0.0f);
         builder.define(DATA_VISIBLE, false);
         builder.define(DATA_CAM_TAG, "");
+        builder.define(DATA_FOV, DEFAULT_FOV);
     }
 
     // Public getters (used by the client mixin)
@@ -129,6 +136,14 @@ public class CameraAnchorEntity extends Entity {
 
     public void setCamTag(String tag) {
         this.entityData.set(DATA_CAM_TAG, tag == null ? "" : tag);
+    }
+
+    public float getFov() {
+        return this.entityData.get(DATA_FOV);
+    }
+
+    public void setFov(float fov) {
+        this.entityData.set(DATA_FOV, Math.max(MIN_FOV, Math.min(MAX_FOV, fov)));
     }
 
     public void setLocalPose(float pitch, float yaw, float roll) {
@@ -299,6 +314,9 @@ public class CameraAnchorEntity extends Entity {
         if (tag.contains("CamTag")) {
             setCamTag(tag.getString("CamTag"));
         }
+        if (tag.contains("Fov")) { // absent on older cameras → DEFAULT_FOV
+            setFov(tag.getFloat("Fov"));
+        }
         // Legacy cameras (saved before CamTag existed): backfill from the scoreboard tags
         // so the client / ReplayMod catalog sees the real name instead of cam-xxxxxxxx.
         // Read straight from NBT so this doesn't depend on Entity.load ordering.
@@ -332,6 +350,7 @@ public class CameraAnchorEntity extends Entity {
         if (!getCamTag().isEmpty()) {
             tag.putString("CamTag", getCamTag());
         }
+        tag.putFloat("Fov", getFov());
     }
 
     @Override

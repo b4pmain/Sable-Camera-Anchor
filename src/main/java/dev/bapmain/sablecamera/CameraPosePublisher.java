@@ -35,6 +35,8 @@ public class CameraPosePublisher {
             return;
         }
 
+        java.util.List<ServerPlayer> lost = null;
+
         for (var entry : targets.entrySet()) {
             ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
             if (player == null) {
@@ -43,12 +45,24 @@ public class CameraPosePublisher {
 
             CameraAnchorEntity anchor = findAnchor(player, entry.getValue());
             if (anchor == null) {
+                // Camera deleted, or player changed dimension: end the view instead of
+                // leaving the client on a stale captured pose.
+                if (lost == null) lost = new java.util.ArrayList<>();
+                lost.add(player);
                 continue;
             }
 
             CameraPosePayload payload = computePose(anchor);
             if (payload != null) {
                 PacketDistributor.sendToPlayer(player, payload);
+            }
+        }
+
+        if (lost != null) {
+            for (ServerPlayer player : lost) {
+                ViewSessionHandler.endView(player, true);
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        "Camera view ended: camera no longer available"), true);
             }
         }
     }
@@ -91,6 +105,6 @@ public class CameraPosePublisher {
                 anchor.getLocalPitch(), anchor.getLocalYaw(), anchor.getLocalRoll());
         Quaternionf mcRot = CameraMath.toMinecraftCamera(worldRot, new Quaternionf());
 
-        return CameraPosePayload.of(worldPos.x, worldPos.y, worldPos.z, mcRot);
+        return CameraPosePayload.of(worldPos.x, worldPos.y, worldPos.z, mcRot, anchor.getFov());
     }
 }

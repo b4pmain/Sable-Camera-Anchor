@@ -17,8 +17,10 @@ public final class CameraPoseClient {
     private static final Quaternionf rot1 = new Quaternionf();
     private static final Quaternionf out = new Quaternionf();
     private static long t0ms, t1ms;
+    private static float fov = 90.0f;
 
-    public static void set(double x, double y, double z, Quaternionfc rot) {
+    public static void set(double x, double y, double z, Quaternionfc rot, float fov) {
+        CameraPoseClient.fov = fov;
         if (active) {
             x0 = x1; y0 = y1; z0 = z1;
             rot0.set(rot1);
@@ -36,6 +38,7 @@ public final class CameraPoseClient {
 
     public static void clear() { active = false; }
     public static boolean isActive() { return active; }
+    public static float fov() { return fov; }
 
     /** alpha 0..1 from packet timing, or fixed ~0.5–1 if packets are steady */
     public static double x(float partial) { return lerp(x0, x1, alpha(partial)); }

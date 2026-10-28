@@ -36,7 +36,7 @@ public class ClientCameraCommands {
                                     ReplayFollowCache.apply(
                                             e.subId(), e.lx(), e.ly(), e.lz(),
                                             e.ox(), e.oy(), e.oz(),
-                                            e.pitch(), e.yaw(), e.roll());
+                                            e.pitch(), e.yaw(), e.roll(), e.fov());
                                     ctx.getSource().sendSuccess(() ->
                                             Component.literal("Replay view: " + tag + " (Shift to exit)"), false);
                                     return 1;

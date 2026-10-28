@@ -18,7 +18,8 @@ import org.joml.Quaternionfc;
 public record CameraPosePayload(
         boolean active,
         double x, double y, double z,
-        float qx, float qy, float qz, float qw
+        float qx, float qy, float qz, float qw,
+        float fov
 ) implements CustomPacketPayload {
 
     public static final Type<CameraPosePayload> TYPE =
@@ -28,11 +29,11 @@ public record CameraPosePayload(
             StreamCodec.of(CameraPosePayload::write, CameraPosePayload::read);
 
     public static CameraPosePayload clear() {
-        return new CameraPosePayload(false, 0, 0, 0, 0, 0, 0, 1);
+        return new CameraPosePayload(false, 0, 0, 0, 0, 0, 0, 1, 90.0f);
     }
 
-    public static CameraPosePayload of(double x, double y, double z, Quaternionfc rot) {
-        return new CameraPosePayload(true, x, y, z, rot.x(), rot.y(), rot.z(), rot.w());
+    public static CameraPosePayload of(double x, double y, double z, Quaternionfc rot, float fov) {
+        return new CameraPosePayload(true, x, y, z, rot.x(), rot.y(), rot.z(), rot.w(), fov);
     }
 
     private static void write(FriendlyByteBuf buf, CameraPosePayload p) {
@@ -45,6 +46,7 @@ public record CameraPosePayload(
             buf.writeFloat(p.qy);
             buf.writeFloat(p.qz);
             buf.writeFloat(p.qw);
+            buf.writeFloat(p.fov);
         }
     }
 
@@ -54,7 +56,8 @@ public record CameraPosePayload(
         }
         return new CameraPosePayload(true,
                 buf.readDouble(), buf.readDouble(), buf.readDouble(),
-                buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()
+                buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
+                buf.readFloat()
         );
     }
 
@@ -73,7 +76,8 @@ public record CameraPosePayload(
                 CameraPoseClient.clear();
             } else {
                 CameraPoseClient.set(payload.x, payload.y, payload.z,
-                        new Quaternionf(payload.qx, payload.qy, payload.qz, payload.qw).normalize());
+                        new Quaternionf(payload.qx, payload.qy, payload.qz, payload.qw).normalize(),
+                        payload.fov);
             }
         });
     }
