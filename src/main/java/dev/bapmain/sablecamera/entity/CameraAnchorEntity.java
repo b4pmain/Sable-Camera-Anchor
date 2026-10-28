@@ -3,6 +3,8 @@ package dev.bapmain.sablecamera.entity;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -143,11 +145,14 @@ public class CameraAnchorEntity extends Entity {
 
     // Attachment
 
-    public void tryAttachToPlayerTracking(Entity player) {
+    /** @return true if the player was tracking a sub-level and the camera attached to it. */
+    public boolean tryAttachToPlayerTracking(Entity player) {
         SubLevel subLevel = Sable.HELPER.getTrackingSubLevel(player);
         if (subLevel != null) {
             attachToSubLevel(subLevel);
+            return true;
         }
+        return false;
     }
 
     public void attachToSubLevel(SubLevel subLevel) {
@@ -293,6 +298,19 @@ public class CameraAnchorEntity extends Entity {
         }
         if (tag.contains("CamTag")) {
             setCamTag(tag.getString("CamTag"));
+        }
+        // Legacy cameras (saved before CamTag existed): backfill from the scoreboard tags
+        // so the client / ReplayMod catalog sees the real name instead of cam-xxxxxxxx.
+        // Read straight from NBT so this doesn't depend on Entity.load ordering.
+        if (getCamTag().isEmpty() && tag.contains("Tags", Tag.TAG_LIST)) {
+            ListTag tags = tag.getList("Tags", Tag.TAG_STRING);
+            for (int i = 0; i < tags.size(); i++) {
+                String t = tags.getString(i);
+                if (!t.isEmpty() && !"sable_camera".equals(t)) {
+                    setCamTag(t);
+                    break;
+                }
+            }
         }
     }
 

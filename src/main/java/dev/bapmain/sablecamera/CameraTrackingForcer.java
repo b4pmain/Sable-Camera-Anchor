@@ -22,6 +22,14 @@ public class CameraTrackingForcer {
     private static int cooldown = 0;
     private static final Map<UUID, Set<Integer>> SENT = new HashMap<>();
 
+    /**
+     * Forget which cameras were sent to this player (logout, dimension change, respawn),
+     * so they get a fresh AddEntity instead of teleports for an entity they no longer have.
+     */
+    public static void forget(UUID playerId) {
+        SENT.remove(playerId);
+    }
+
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         if ((++cooldown % 10) != 0) return;

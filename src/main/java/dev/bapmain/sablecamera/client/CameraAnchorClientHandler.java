@@ -116,15 +116,26 @@ public class CameraAnchorClientHandler {
     public static void onJoin(net.neoforged.neoforge.event.entity.EntityJoinLevelEvent event) {
         if (!event.getLevel().isClientSide) return;
         if (event.getEntity() instanceof CameraAnchorEntity a) {
+            // Synched data (sub-level, CamTag) may not have arrived yet; the periodic
+            // sweep in onClientTick picks it up / upgrades the name once it does.
             CameraCatalog.remember(a);
-            System.out.println("[SableCamera] catalog + " + CameraCatalog.all().keySet());
         }
     }
+
+    private static int catalogSweep = 0;
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
+
+        if (mc.level != null && (++catalogSweep % 10) == 0) {
+            for (Entity e : mc.level.entitiesForRendering()) {
+                if (e instanceof CameraAnchorEntity a) {
+                    CameraCatalog.remember(a);
+                }
+            }
+        }
 
         if (ReplayCompat.isInReplay()
                 && ReplayFollowCache.isActive()

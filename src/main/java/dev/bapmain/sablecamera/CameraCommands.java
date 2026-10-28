@@ -2,38 +2,75 @@ package dev.bapmain.sablecamera;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.entity.ModEntities;
 import dev.bapmain.sablecamera.network.FollowCameraPayload;
+import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.phys.Vec3;
 import net.minecraft.server.level.ServerPlayer;
-import com.mojang.brigadier.arguments.DoubleArgumentType;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
-import net.minecraft.world.level.GameType;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class CameraCommands {
+
+    /** Reserved tag that targets every camera (delcam / angle / offset). */
+    public static final String ALL = "all";
+    /** Legacy marker tag, never shown as a camera name. */
+    private static final String LEGACY_MARKER_TAG = "sable_camera";
+
+    private static final String USAGE_ADDCAM = "/camanchor addcam <tag> [pos]";
+    private static final String USAGE_DELCAM = "/camanchor delcam <tag|all>";
+    private static final String USAGE_ANGLE  = "/camanchor angle <pitch> <yaw> [roll] <tag|all>";
+    private static final String USAGE_OFFSET = "/camanchor offset <x> <y> <z> <tag|all>";
+    private static final String USAGE_VIEW   = "/camanchor view <tag>";
+    private static final String USAGE_SHOW   = "/camanchor show <true|false>";
+
+    private static final List<String> GRID_POSITIONS = List.of(
+            "topleft", "topcenter", "topright",
+            "centerleft", "center", "centerright",
+            "bottomleft", "bottomcenter", "bottomright");
+
+    private static final SuggestionProvider<CommandSourceStack> SUGGEST_TAGS =
+            (ctx, builder) -> SharedSuggestionProvider.suggest(cameraNames(ctx.getSource().getLevel()), builder);
+
+    private static final SuggestionProvider<CommandSourceStack> SUGGEST_TAGS_OR_ALL = (ctx, builder) -> {
+        List<String> names = new ArrayList<>(cameraNames(ctx.getSource().getLevel()));
+        names.add(ALL);
+        return SharedSuggestionProvider.suggest(names, builder);
+    };
+
+    private static final SuggestionProvider<CommandSourceStack> SUGGEST_GRID =
+            (ctx, builder) -> SharedSuggestionProvider.suggest(GRID_POSITIONS, builder);
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("camanchor")
                 .requires(s -> s.hasPermission(2))
 
                 .then(Commands.literal("addcam")
+                        .executes(ctx -> usage(ctx.getSource(), "Missing camera tag.", USAGE_ADDCAM))
                         .then(Commands.argument("tag", StringArgumentType.string())
                                 // no pos → player position
                                 .executes(ctx -> addCamera(
@@ -42,6 +79,7 @@ public class CameraCommands {
                                         null))
                                 // with pos → grid on block under player
                                 .then(Commands.argument("pos", StringArgumentType.string())
+                                        .suggests(SUGGEST_GRID)
                                         .executes(ctx -> addCamera(
                                                 ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "tag"),
@@ -52,130 +90,101 @@ public class CameraCommands {
 
                 .then(Commands.literal("delcam")
                         // no args → error
-                        .executes(ctx -> {
-                            ctx.getSource().sendFailure(
-                                    Component.literal("Input a tag name first (use \"all\" to delete all)")
-                                            .withStyle(ChatFormatting.RED));
-                            return 0;
-                        })
+                        .executes(ctx -> usage(ctx.getSource(),
+                                "Input a tag name first (use \"all\" to delete all).", USAGE_DELCAM))
                         .then(Commands.argument("tag", StringArgumentType.string())
-                                .executes(ctx -> {
-                                    String tag = StringArgumentType.getString(ctx, "tag");
-                                    ServerLevel level = ctx.getSource().getLevel();
-                                    int count = 0;
-
-                                    for (Entity entity : level.getEntities().getAll()) {
-                                        if (entity instanceof CameraAnchorEntity anchor) {
-                                            if (tag.equalsIgnoreCase("all") || anchor.getTags().contains(tag)) {
-                                                anchor.discard();
-                                                count++;
-                                            }
-                                        }
-                                    }
-
-                                    if (count == 0) {
-                                        ctx.getSource().sendFailure(Component.literal("No cameras matched '" + tag + "'")
-                                                .withStyle(ChatFormatting.RED));
-                                        return 0;
-                                    }
-
-                                    int finalCount = count;
-                                    ctx.getSource().sendSuccess(() ->
-                                            Component.literal("Deleted " + finalCount + " camera(s)"), false);
-                                    return finalCount;
-                                })
+                                .suggests(SUGGEST_TAGS_OR_ALL)
+                                .executes(ctx -> deleteCameras(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "tag")))
                         )
                 )
 
+                // Children order matters: "roll" is registered before "tag" so that
+                // "/angle 10 0 5" parses 5 as roll (→ missing tag) instead of a tag named "5".
                 .then(Commands.literal("angle")
+                        .executes(ctx -> usage(ctx.getSource(),
+                                "Missing pitch, yaw and camera tag.", USAGE_ANGLE))
                         .then(Commands.argument("pitch", FloatArgumentType.floatArg())
+                                .executes(ctx -> usage(ctx.getSource(),
+                                        "Missing yaw and camera tag.", USAGE_ANGLE))
                                 .then(Commands.argument("yaw", FloatArgumentType.floatArg())
-                                        .executes(ctx -> setAngle(ctx,
-                                                FloatArgumentType.getFloat(ctx, "pitch"),
-                                                FloatArgumentType.getFloat(ctx, "yaw"), 0.0,
-                                                null))
-                                        .then(Commands.argument("roll", DoubleArgumentType.doubleArg())
-                                                .executes(ctx -> setAngle(ctx,
-                                                        DoubleArgumentType.getDouble(ctx, "pitch"),
-                                                        DoubleArgumentType.getDouble(ctx, "yaw"),
-                                                        DoubleArgumentType.getDouble(ctx, "roll"),
-                                                        null))
-                                        .then(Commands.argument("tag", StringArgumentType.word())
-                                                .executes(ctx -> setAngle(ctx,
+                                        .executes(ctx -> usage(ctx.getSource(),
+                                                "Missing camera tag (use \"all\" to target every camera).", USAGE_ANGLE))
+                                        .then(Commands.argument("roll", FloatArgumentType.floatArg())
+                                                .executes(ctx -> usage(ctx.getSource(),
+                                                        "Missing camera tag (use \"all\" to target every camera).", USAGE_ANGLE))
+                                                .then(Commands.argument("tag", StringArgumentType.string())
+                                                        .suggests(SUGGEST_TAGS_OR_ALL)
+                                                        .executes(ctx -> setAngle(ctx.getSource(),
+                                                                FloatArgumentType.getFloat(ctx, "pitch"),
+                                                                FloatArgumentType.getFloat(ctx, "yaw"),
+                                                                FloatArgumentType.getFloat(ctx, "roll"),
+                                                                StringArgumentType.getString(ctx, "tag")))))
+                                        .then(Commands.argument("tag", StringArgumentType.string())
+                                                .suggests(SUGGEST_TAGS_OR_ALL)
+                                                .executes(ctx -> setAngle(ctx.getSource(),
                                                         FloatArgumentType.getFloat(ctx, "pitch"),
                                                         FloatArgumentType.getFloat(ctx, "yaw"),
-                                                        DoubleArgumentType.getDouble(ctx, "roll"),
-                                                        StringArgumentType.getString(ctx, "tag"))))))))
+                                                        0.0f,
+                                                        StringArgumentType.getString(ctx, "tag")))))))
 
                 .then(Commands.literal("offset")
+                        .executes(ctx -> usage(ctx.getSource(),
+                                "Missing x, y, z and camera tag.", USAGE_OFFSET))
                         .then(Commands.argument("x", DoubleArgumentType.doubleArg())
+                                .executes(ctx -> usage(ctx.getSource(),
+                                        "Missing y, z and camera tag.", USAGE_OFFSET))
                                 .then(Commands.argument("y", DoubleArgumentType.doubleArg())
+                                        .executes(ctx -> usage(ctx.getSource(),
+                                                "Missing z and camera tag.", USAGE_OFFSET))
                                         .then(Commands.argument("z", DoubleArgumentType.doubleArg())
-                                                .executes(ctx -> {
-                                                    double x = DoubleArgumentType.getDouble(ctx, "x");
-                                                    double y = DoubleArgumentType.getDouble(ctx, "y");
-                                                    double z = DoubleArgumentType.getDouble(ctx, "z");
-                                                    return setOffset(ctx.getSource(), x, y, z, null);
-                                                })
+                                                .executes(ctx -> usage(ctx.getSource(),
+                                                        "Missing camera tag (use \"all\" to target every camera).", USAGE_OFFSET))
                                                 .then(Commands.argument("tag", StringArgumentType.string())
-                                                        .executes(ctx -> {
-                                                            double x = DoubleArgumentType.getDouble(ctx, "x");
-                                                            double y = DoubleArgumentType.getDouble(ctx, "y");
-                                                            double z = DoubleArgumentType.getDouble(ctx, "z");
-                                                            String tag = StringArgumentType.getString(ctx, "tag");
-                                                            return setOffset(ctx.getSource(), x, y, z, tag);
-                                                        })
+                                                        .suggests(SUGGEST_TAGS_OR_ALL)
+                                                        .executes(ctx -> setOffset(ctx.getSource(),
+                                                                DoubleArgumentType.getDouble(ctx, "x"),
+                                                                DoubleArgumentType.getDouble(ctx, "y"),
+                                                                DoubleArgumentType.getDouble(ctx, "z"),
+                                                                StringArgumentType.getString(ctx, "tag")))
                                                 )
                                         )
                                 )
                         )
                 )
                 .then(Commands.literal("view")
+                        .executes(ctx -> usage(ctx.getSource(), "Missing camera tag.", USAGE_VIEW))
                         .then(Commands.argument("tag", StringArgumentType.string())
+                                .suggests(SUGGEST_TAGS)
                                 .executes(ctx -> viewCamera(ctx.getSource(), StringArgumentType.getString(ctx, "tag")))
                         )
                 )
                 .then(Commands.literal("list")
                         .executes(ctx -> {
-                            ServerLevel level = ctx.getSource().getLevel();
-                            java.util.Set<String> tags = new java.util.LinkedHashSet<>();
+                            List<String> names = cameraNames(ctx.getSource().getLevel());
 
-                            for (Entity entity : level.getEntities().getAll()) {
-                                if (entity instanceof CameraAnchorEntity anchor) {
-                                    for (String t : anchor.getTags()) {
-                                        if (!t.equals("sable_camera")) {
-                                            tags.add(t);
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (tags.isEmpty()) {
+                            if (names.isEmpty()) {
                                 ctx.getSource().sendSuccess(() ->
                                         Component.literal("No cameras found").withStyle(ChatFormatting.GRAY), false);
                             } else {
                                 ctx.getSource().sendSuccess(() ->
-                                        Component.literal("Cameras: " + String.join(", ", tags))
+                                        Component.literal("Cameras: " + String.join(", ", names))
                                                 .withStyle(ChatFormatting.AQUA), false);
                             }
-                            return tags.size();
+                            return names.size();
                         })
                 )
                 .then(Commands.literal("show")
+                        .executes(ctx -> usage(ctx.getSource(), "Missing true/false.", USAGE_SHOW))
                         .then(Commands.argument("value", BoolArgumentType.bool())
                                 .executes(ctx -> {
                                     boolean value = BoolArgumentType.getBool(ctx, "value");
-                                    ServerLevel level = ctx.getSource().getLevel();
-                                    int count = 0;
-
-                                    for (Entity entity : level.getEntities().getAll()) {
-                                        if (entity instanceof CameraAnchorEntity anchor) {
-                                            anchor.setCameraVisible(value);
-                                            count++;
-                                        }
+                                    List<CameraAnchorEntity> cams = findCameras(ctx.getSource().getLevel(), ALL);
+                                    for (CameraAnchorEntity anchor : cams) {
+                                        anchor.setCameraVisible(value);
                                     }
 
-                                    int finalCount = count;
+                                    int finalCount = cams.size();
                                     ctx.getSource().sendSuccess(() -> Component.literal(
                                             (value ? "Showing" : "Hiding") + " " + finalCount + " camera(s)"
                                     ), false);
@@ -186,17 +195,110 @@ public class CameraCommands {
         );
     }
 
+    // ---------------------------------------------------------------------
+    // Lookup helpers
+    // ---------------------------------------------------------------------
+
+    /** Display name of a camera: synched CamTag, falling back to legacy scoreboard tags. */
+    public static String nameOf(CameraAnchorEntity anchor) {
+        String camTag = anchor.getCamTag();
+        if (!camTag.isEmpty()) {
+            return camTag;
+        }
+        for (String t : anchor.getTags()) {
+            if (!LEGACY_MARKER_TAG.equals(t)) {
+                return t;
+            }
+        }
+        return "";
+    }
+
+    /** True if the camera answers to {@code tag} (CamTag or legacy scoreboard tag). */
+    public static boolean matchesTag(CameraAnchorEntity anchor, String tag) {
+        return tag.equals(anchor.getCamTag()) || anchor.getTags().contains(tag);
+    }
+
+    /** All cameras matching {@code tag}; {@link #ALL} (case-insensitive) matches every camera. */
+    public static List<CameraAnchorEntity> findCameras(ServerLevel level, String tag) {
+        boolean all = ALL.equalsIgnoreCase(tag);
+        List<CameraAnchorEntity> out = new ArrayList<>();
+        for (Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof CameraAnchorEntity anchor && (all || matchesTag(anchor, tag))) {
+                out.add(anchor);
+            }
+        }
+        return out;
+    }
+
+    @Nullable
+    public static CameraAnchorEntity findCamera(ServerLevel level, String tag) {
+        for (Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof CameraAnchorEntity anchor && matchesTag(anchor, tag)) {
+                return anchor;
+            }
+        }
+        return null;
+    }
+
+    private static List<String> cameraNames(ServerLevel level) {
+        Set<String> names = new LinkedHashSet<>();
+        for (Entity entity : level.getEntities().getAll()) {
+            if (entity instanceof CameraAnchorEntity anchor) {
+                String name = nameOf(anchor);
+                if (!name.isEmpty()) {
+                    names.add(name);
+                }
+            }
+        }
+        return new ArrayList<>(names);
+    }
+
+    private static int usage(CommandSourceStack source, String problem, String usage) {
+        source.sendFailure(Component.literal(problem));
+        source.sendFailure(Component.literal("Usage: " + usage).withStyle(ChatFormatting.GRAY));
+        return 0;
+    }
+
+    private static int noMatch(CommandSourceStack source, String tag) {
+        source.sendFailure(Component.literal("No camera found with tag '" + tag + "'")
+                .withStyle(ChatFormatting.RED));
+        return 0;
+    }
+
+    // ---------------------------------------------------------------------
+    // Subcommands
+    // ---------------------------------------------------------------------
+
     private static int addCamera(CommandSourceStack source, String tag, @Nullable String pos)
             throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         ServerLevel level = player.serverLevel();
 
-        for (Entity entity : level.getEntities().getAll()) {
-            if (entity instanceof CameraAnchorEntity anchor && anchor.getTags().contains(tag)) {
-                source.sendFailure(Component.literal("A camera with tag '" + tag + "' already exists")
-                        .withStyle(ChatFormatting.RED));
-                return 0;
-            }
+        if (ALL.equalsIgnoreCase(tag)) {
+            source.sendFailure(Component.literal("'" + ALL + "' is reserved and cannot be used as a camera tag")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        if (findCamera(level, tag) != null) {
+            source.sendFailure(Component.literal("A camera with tag '" + tag + "' already exists")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        if (pos != null && !GRID_POSITIONS.contains(pos.toLowerCase())) {
+            source.sendFailure(Component.literal("Unknown grid position '" + pos + "'. Valid: "
+                    + String.join(", ", GRID_POSITIONS)).withStyle(ChatFormatting.RED));
+            return 0;
+        }
+
+        // Validate before spawning: an unattached camera is useless and fails later.
+        SubLevel subLevel = Sable.HELPER.getTrackingSubLevel(player);
+        if (subLevel == null) {
+            source.sendFailure(Component.literal(
+                    "You must be standing on an assembled Sable sub-level to add a camera")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
         }
 
         double x, y, z;
@@ -219,7 +321,7 @@ public class CameraCommands {
         anchor.setPos(x, y, z);
         anchor.addTag(tag);
         anchor.setCamTag(tag);
-        anchor.tryAttachToPlayerTracking(player);
+        anchor.attachToSubLevel(subLevel);
         level.addFreshEntity(anchor);
 
         String where = (pos == null) ? "player position" : pos;
@@ -229,82 +331,70 @@ public class CameraCommands {
         return 1;
     }
 
-    private static int setAngle(CommandContext<CommandSourceStack> ctx,
-                                double pitch, double yaw, double roll,
-                                @Nullable String tag) {
-        CommandSourceStack source = ctx.getSource();
-        int count = 0;
-
-        for (Entity entity : source.getLevel().getEntities().getAll()) {
-            if (entity instanceof CameraAnchorEntity anchor) {
-                if (tag == null || anchor.getTags().contains(tag)) {
-                    anchor.setLocalPose((float) pitch, (float) yaw, (float) roll);
-                    count++;
-                }
-            }
+    private static int deleteCameras(CommandSourceStack source, String tag) {
+        List<CameraAnchorEntity> cams = findCameras(source.getLevel(), tag);
+        if (cams.isEmpty()) {
+            return noMatch(source, tag);
+        }
+        for (CameraAnchorEntity anchor : cams) {
+            anchor.discard();
         }
 
-        if (count == 0) {
-            source.sendFailure(Component.literal("No matching cameras found"));
-            return 0;
+        int finalCount = cams.size();
+        source.sendSuccess(() ->
+                Component.literal("Deleted " + finalCount + " camera(s)"), false);
+        return finalCount;
+    }
+
+    private static int setAngle(CommandSourceStack source,
+                                float pitch, float yaw, float roll,
+                                String tag) {
+        List<CameraAnchorEntity> cams = findCameras(source.getLevel(), tag);
+        if (cams.isEmpty()) {
+            return noMatch(source, tag);
+        }
+        for (CameraAnchorEntity anchor : cams) {
+            anchor.setLocalPose(pitch, yaw, roll);
         }
 
         String msg = String.format("Set angle pitch=%.1f yaw=%.1f roll=%.1f on %d camera(s)",
-                pitch, yaw, roll, count);
+                pitch, yaw, roll, cams.size());
         source.sendSuccess(() -> Component.literal(msg), false);
-        return count;
+        return cams.size();
     }
 
-    private static int setOffset(CommandSourceStack source, double x, double y, double z, @Nullable String tag) {
-        int count = 0;
-
-        for (Entity entity : source.getLevel().getEntities().getAll()) {
-            if (entity instanceof CameraAnchorEntity anchor) {
-                if (tag == null || anchor.getTags().contains(tag)) {
-                    anchor.setOffset((float) x, (float) y, (float) z);
-                    count++;
-                }
-            }
+    private static int setOffset(CommandSourceStack source, double x, double y, double z, String tag) {
+        List<CameraAnchorEntity> cams = findCameras(source.getLevel(), tag);
+        if (cams.isEmpty()) {
+            return noMatch(source, tag);
+        }
+        for (CameraAnchorEntity anchor : cams) {
+            anchor.setOffset((float) x, (float) y, (float) z);
         }
 
-        if (count == 0) {
-            source.sendFailure(Component.literal("No matching camera anchors found"));
-            return 0;
-        }
-        final int finalCount = count;
-
+        final int finalCount = cams.size();
         source.sendSuccess(() -> Component.literal(
                 "Set offset to " + x + ", " + y + ", " + z + " on " + finalCount + " camera(s)"
         ), false);
-        return count;
+        return finalCount;
     }
 
     private static int viewCamera(CommandSourceStack source, String tag) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         ServerLevel level = source.getLevel();
 
-        CameraAnchorEntity target = null;
-        for (Entity entity : level.getEntities().getAll()) {
-            if (entity instanceof CameraAnchorEntity anchor && anchor.getTags().contains(tag)) {
-                target = anchor;
-                break;
-            }
+        CameraAnchorEntity target = findCamera(level, tag);
+        if (target == null) {
+            return noMatch(source, tag);
         }
 
-        if (target == null) {
-            source.sendFailure(Component.literal("No camera found with tag: " + tag)
+        if (target.getAttachedSubLevelId() == null) {
+            source.sendFailure(Component.literal("Camera '" + tag + "' is not attached to a sub-level")
                     .withStyle(ChatFormatting.RED));
             return 0;
         }
 
         FOLLOW_TARGETS.put(player.getUUID(), target.getUUID());
-        PacketDistributor.sendToPlayer(player, FollowCameraPayload.of(target));
-
-        if (target.getAttachedSubLevelId() == null) {
-            source.sendFailure(Component.literal("Camera is not attached to a sub-level")
-                    .withStyle(ChatFormatting.RED));
-            return 0;
-        }
 
         // first view in sesh only return
         if (!VIEW_SESSIONS.containsKey(player.getUUID())) {
@@ -324,7 +414,7 @@ public class CameraCommands {
         return 1;
     }
 
-    private static final java.util.Map<java.util.UUID, ViewState> VIEW_SESSIONS = new java.util.HashMap<>();
+    private static final Map<UUID, ViewState> VIEW_SESSIONS = new HashMap<>();
     /** player UUID → camera entity UUID */
     public static final Map<UUID, UUID> FOLLOW_TARGETS = new HashMap<>();
 
@@ -347,7 +437,7 @@ public class CameraCommands {
         }
     }
 
-    static java.util.Map<java.util.UUID, ViewState> getViewSessions() {
+    static Map<UUID, ViewState> getViewSessions() {
         return VIEW_SESSIONS;
     }
 
