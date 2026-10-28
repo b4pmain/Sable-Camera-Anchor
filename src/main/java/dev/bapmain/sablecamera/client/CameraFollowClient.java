@@ -61,6 +61,13 @@ public final class CameraFollowClient {
         captured = sub != null;
     }
 
+    public static void updateAnglesAndFov(float pitch, float yaw, float roll, float fov) {
+        CameraFollowClient.pitch = pitch;
+        CameraFollowClient.yaw = yaw;
+        CameraFollowClient.roll = roll;
+        CameraFollowClient.fov = fov;
+    }
+
     public static boolean hasCapture() { return captured; }
     @Nullable public static UUID capturedSubId() { return subId; }
     public static float lx() { return lx; }

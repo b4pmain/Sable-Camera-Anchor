@@ -62,6 +62,13 @@ public final class ReplayFollowCache {
         activeTag = "";
     }
 
+    public static void updateAnglesAndFov(float pitch, float yaw, float roll, float fov) {
+        ReplayFollowCache.pitch = pitch;
+        ReplayFollowCache.yaw = yaw;
+        ReplayFollowCache.roll = roll;
+        ReplayFollowCache.fov = fov;
+    }
+
     public static boolean isActive() { return active; }
     public static String activeTag() { return activeTag; }
     public static UUID subId() { return subId; }

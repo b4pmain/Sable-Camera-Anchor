@@ -88,7 +88,9 @@ public abstract class CameraMixin {
             orientKey = Integer.MAX_VALUE;
 
         } else if (anchor != null) {
-            CameraFollowClient.captureFrom(anchor);
+            if (!CameraAimClient.isUnlocked()) {
+                CameraFollowClient.captureFrom(anchor);
+            }
 
             subId = anchor.getAttachedSubLevelId();
             lx = anchor.getLocalX();
@@ -125,6 +127,13 @@ public abstract class CameraMixin {
         if (subId == null) {
             sablecamera$applyServerPoseIfLive(liveSelf, partialTick);
             return;
+        }
+
+        if (CameraAimClient.isUnlocked()) {
+            lp = CameraAimClient.pitch();
+            lyaw = CameraAimClient.yaw();
+            lr = CameraAimClient.roll();
+            fov = CameraAimClient.fov();
         }
 
         ClientSubLevel clientSub = findClientSubLevel(subId);
@@ -176,7 +185,8 @@ public abstract class CameraMixin {
                 CameraPoseClient.y(partialTick),
                 CameraPoseClient.z(partialTick));
         sablecamera$applyRotation(CameraPoseClient.rotation(partialTick));
-        sablecamera$markOverride(CameraPoseClient.fov(), true);
+        float serverFov = CameraAimClient.isUnlocked() ? CameraAimClient.fov() : CameraPoseClient.fov();
+        sablecamera$markOverride(serverFov, true);
     }
 
     /**

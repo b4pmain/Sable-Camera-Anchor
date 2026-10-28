@@ -4,6 +4,7 @@ import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
 import dev.bapmain.sablecamera.math.CameraMath;
 import dev.bapmain.sablecamera.network.CycleCameraPayload;
 import dev.bapmain.sablecamera.network.ExitViewPayload;
+import dev.bapmain.sablecamera.network.SaveCameraAimPayload;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
@@ -16,6 +17,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
@@ -68,10 +70,30 @@ public class CameraAnchorClientHandler {
     }
 
     public static void resetLiveView() {
+        CameraAimClient.reset();
         CameraFollowClient.clear();
         CameraPoseClient.clear();
         CameraOrientState.clear();
         ActiveView.beginFrame();
+    }
+
+    @SubscribeEvent
+    public static void onMouseScroll(InputEvent.MouseScrollingEvent event) {
+        if (!CameraAimClient.isUnlocked() || !ActiveView.isOverriding()) {
+            return;
+        }
+        double deltaY = event.getScrollDeltaY();
+        if (deltaY != 0.0) {
+            // Scroll up (+deltaY) zooms in (-FOV); scroll down (-deltaY) zooms out (+FOV)
+            CameraAimClient.adjustFov((float) -deltaY);
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                mc.player.displayClientMessage(Component.literal(
+                        String.format("Camera FOV: %.0f", CameraAimClient.fov()))
+                        .withStyle(ChatFormatting.YELLOW), true);
+            }
+            event.setCanceled(true);
+        }
     }
 
     @SubscribeEvent
@@ -132,11 +154,13 @@ public class CameraAnchorClientHandler {
         if (ReplayCompat.isInReplay()
                 && ReplayFollowCache.isActive()
                 && mc.options.keyShift.isDown()) {
+            CameraAimClient.reset();
             ReplayFollowCache.clear();
         }
 
         while (ClientSetup.EXIT_VIEW_KEY.consumeClick()) {
             if (ReplayCompat.isInReplay() && ReplayFollowCache.isActive()) {
+                CameraAimClient.reset();
                 ReplayFollowCache.clear();
                 mc.player.displayClientMessage(Component.literal("Exited replay camera view"), true);
             } else if (CameraFollowClient.isViewing() || CameraPoseClient.isActive()) {
@@ -144,6 +168,26 @@ public class CameraAnchorClientHandler {
                 PacketDistributor.sendToServer(ExitViewPayload.INSTANCE);
                 mc.player.displayClientMessage(Component.literal("Exited camera view"), true);
             }
+        }
+
+        while (ClientSetup.TOGGLE_LOCK_KEY.consumeClick()) {
+            if (ActiveView.isOverriding()) {
+                toggleAimLock(mc);
+            }
+        }
+
+        int fovStep = 0;
+        while (ClientSetup.FOV_DEC_KEY.consumeClick()) {
+            fovStep--;
+        }
+        while (ClientSetup.FOV_INC_KEY.consumeClick()) {
+            fovStep++;
+        }
+        if (fovStep != 0 && CameraAimClient.isUnlocked() && ActiveView.isOverriding()) {
+            CameraAimClient.adjustFov(fovStep);
+            mc.player.displayClientMessage(Component.literal(
+                    String.format("Camera FOV: %.0f", CameraAimClient.fov()))
+                    .withStyle(ChatFormatting.YELLOW), true);
         }
 
         int cycleStep = 0;
@@ -156,10 +200,65 @@ public class CameraAnchorClientHandler {
 
         if (cycleStep != 0) {
             if (ReplayCompat.isInReplay() && ReplayFollowCache.isActive()) {
+                CameraAimClient.reset();
                 cycleReplayCamera(mc, cycleStep);
             } else if (!ReplayCompat.isInReplay() && (CameraFollowClient.isViewing() || CameraPoseClient.isActive())) {
+                CameraAimClient.reset();
                 PacketDistributor.sendToServer(new CycleCameraPayload(cycleStep));
             }
+        }
+    }
+
+    private static void toggleAimLock(Minecraft mc) {
+        boolean replay = ReplayCompat.isInReplay();
+        if (!CameraAimClient.isUnlocked()) {
+            float p, y, r, f;
+            if (replay && ReplayFollowCache.isActive()) {
+                p = ReplayFollowCache.pitch();
+                y = ReplayFollowCache.yaw();
+                r = ReplayFollowCache.roll();
+                f = ReplayFollowCache.fov();
+            } else {
+                p = CameraFollowClient.pitch();
+                y = CameraFollowClient.yaw();
+                r = CameraFollowClient.roll();
+                f = CameraFollowClient.fov();
+            }
+            CameraAimClient.unlock(p, y, r, f);
+            mc.player.displayClientMessage(Component.literal(
+                    "Camera aim UNLOCKED (mouse to aim, scroll/-/+ for FOV, L to lock & save)")
+                    .withStyle(ChatFormatting.YELLOW), true);
+        } else {
+            float p = CameraAimClient.pitch();
+            float y = CameraAimClient.yaw();
+            float r = CameraAimClient.roll();
+            float f = CameraAimClient.fov();
+            CameraAimClient.lock();
+
+            if (replay && ReplayFollowCache.isActive()) {
+                ReplayFollowCache.updateAnglesAndFov(p, y, r, f);
+                String tag = ReplayFollowCache.activeTag();
+                if (!tag.isEmpty()) {
+                    CameraCatalog.updateAnglesAndFov(tag, p, y, r, f);
+                }
+            } else {
+                CameraFollowClient.updateAnglesAndFov(p, y, r, f);
+                UUID id = CameraFollowClient.getFollow();
+                if (id != null && mc.level != null) {
+                    for (Entity e : mc.level.entitiesForRendering()) {
+                        if (e instanceof CameraAnchorEntity a && id.equals(a.getUUID())) {
+                            a.setLocalPose(p, y, r);
+                            a.setFov(f);
+                            CameraCatalog.remember(a);
+                            break;
+                        }
+                    }
+                }
+                PacketDistributor.sendToServer(new SaveCameraAimPayload(p, y, r, f));
+            }
+            mc.player.displayClientMessage(Component.literal(
+                    String.format("Camera aim LOCKED & saved (pitch=%.1f yaw=%.1f fov=%.0f)", p, y, f))
+                    .withStyle(ChatFormatting.GREEN), true);
         }
     }
 

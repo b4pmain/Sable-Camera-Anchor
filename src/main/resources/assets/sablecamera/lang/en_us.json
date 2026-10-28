@@ -2,5 +2,8 @@
   "key.categories.sablecamera": "Sable Camera Anchor",
   "key.sablecamera.exit": "Exit Camera View",
   "key.sablecamera.prev_camera": "Previous Camera",
-  "key.sablecamera.next_camera": "Next Camera"
+  "key.sablecamera.next_camera": "Next Camera",
+  "key.sablecamera.toggle_lock": "Lock/Unlock Camera Aim",
+  "key.sablecamera.fov_decrease": "Decrease Camera FOV (-1)",
+  "key.sablecamera.fov_increase": "Increase Camera FOV (+1)"
 }

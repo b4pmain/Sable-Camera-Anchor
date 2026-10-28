@@ -1,6 +1,7 @@
 package dev.bapmain.sablecamera.network;
 
 import dev.bapmain.sablecamera.SableCameraMod;
+import dev.bapmain.sablecamera.client.CameraAimClient;
 import dev.bapmain.sablecamera.client.CameraFollowClient;
 import dev.bapmain.sablecamera.client.CameraOrientState;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
@@ -84,12 +85,16 @@ public record FollowCameraPayload(
 
             // temporarily do NOT skip replay — live was getting follow=null
             if (payload.cameraId() == null) {
+                CameraAimClient.reset();
                 CameraFollowClient.clear();
                 CameraOrientState.clear();
                 return;
             }
 
             // new target → don't smooth from the previous camera's orientation
+            if (!payload.cameraId().equals(CameraFollowClient.getFollow())) {
+                CameraAimClient.reset();
+            }
             CameraOrientState.clear();
             CameraFollowClient.setFollow(payload.cameraId());
             if (payload.hasAttach()) {

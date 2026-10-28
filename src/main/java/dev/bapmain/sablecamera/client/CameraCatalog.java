@@ -99,4 +99,14 @@ public final class CameraCatalog {
     public static Entry get(String tag) { return BY_TAG.get(tag); }
     public static String nameOf(UUID entityId) { return NAME_BY_ENTITY.getOrDefault(entityId, ""); }
     public static Map<String, Entry> all() { return BY_TAG; }
+
+    public static void updateAnglesAndFov(String tag, float pitch, float yaw, float roll, float fov) {
+        Entry existing = BY_TAG.get(tag);
+        if (existing != null) {
+            BY_TAG.put(tag, new Entry(
+                    existing.subId(), existing.lx(), existing.ly(), existing.lz(),
+                    existing.ox(), existing.oy(), existing.oz(),
+                    pitch, yaw, roll, fov));
+        }
+    }
 }

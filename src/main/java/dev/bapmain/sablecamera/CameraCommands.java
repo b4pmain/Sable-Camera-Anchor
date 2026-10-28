@@ -491,6 +491,25 @@ public class CameraCommands {
         return 1;
     }
 
+    public static void applyUnlockedAim(ServerPlayer player, float pitch, float yaw, float roll, float fov) {
+        if (!player.hasPermissions(ADMIN_LEVEL)) {
+            player.displayClientMessage(Component.literal("Requires operator permission to save camera aim")
+                    .withStyle(ChatFormatting.RED), true);
+            return;
+        }
+        UUID targetId = FOLLOW_TARGETS.get(player.getUUID());
+        if (targetId == null) {
+            return;
+        }
+        Entity entity = player.serverLevel().getEntity(targetId);
+        if (!(entity instanceof CameraAnchorEntity anchor)) {
+            return;
+        }
+        anchor.setLocalPose(pitch, yaw, roll);
+        anchor.setFov(fov);
+        refreshViewers(player.createCommandSourceStack(), List.of(anchor));
+    }
+
     public static int cycleCamera(ServerPlayer player, int step) {
         ServerLevel level = player.serverLevel();
         List<CameraAnchorEntity> attached = new ArrayList<>();

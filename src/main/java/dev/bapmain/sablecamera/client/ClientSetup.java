@@ -40,6 +40,30 @@ public class ClientSetup {
             KEY_CATEGORY
     );
 
+    public static final KeyMapping TOGGLE_LOCK_KEY = new KeyMapping(
+            "key.sablecamera.toggle_lock",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_L,
+            KEY_CATEGORY
+    );
+
+    public static final KeyMapping FOV_DEC_KEY = new KeyMapping(
+            "key.sablecamera.fov_decrease",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_MINUS,
+            KEY_CATEGORY
+    );
+
+    public static final KeyMapping FOV_INC_KEY = new KeyMapping(
+            "key.sablecamera.fov_increase",
+            KeyConflictContext.IN_GAME,
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_EQUAL,
+            KEY_CATEGORY
+    );
+
     @SubscribeEvent
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.CAMERA_ANCHOR.get(), CameraAnchorRenderer::new);
@@ -50,6 +74,9 @@ public class ClientSetup {
         event.register(EXIT_VIEW_KEY);
         event.register(PREV_CAMERA_KEY);
         event.register(NEXT_CAMERA_KEY);
+        event.register(TOGGLE_LOCK_KEY);
+        event.register(FOV_DEC_KEY);
+        event.register(FOV_INC_KEY);
     }
 
 }
