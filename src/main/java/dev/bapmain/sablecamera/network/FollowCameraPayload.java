@@ -16,6 +16,7 @@ import java.util.UUID;
 
 public record FollowCameraPayload(
         @Nullable UUID cameraId,
+        String tag,
         boolean hasAttach,
         @Nullable UUID subId,
         float lx, float ly, float lz,
@@ -31,13 +32,14 @@ public record FollowCameraPayload(
             StreamCodec.of(FollowCameraPayload::write, FollowCameraPayload::read);
 
     public static FollowCameraPayload clear() {
-        return new FollowCameraPayload(null, false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        return new FollowCameraPayload(null, "", false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 CameraAnchorEntity.DEFAULT_FOV);
     }
 
     public static FollowCameraPayload of(CameraAnchorEntity a) {
         return new FollowCameraPayload(
                 a.getUUID(),
+                a.getCamTag(),
                 a.getAttachedSubLevelId() != null,
                 a.getAttachedSubLevelId(),
                 a.getLocalX(), a.getLocalY(), a.getLocalZ(),
@@ -49,7 +51,10 @@ public record FollowCameraPayload(
 
     private static void write(FriendlyByteBuf buf, FollowCameraPayload p) {
         buf.writeBoolean(p.cameraId != null);
-        if (p.cameraId != null) buf.writeUUID(p.cameraId);
+        if (p.cameraId != null) {
+            buf.writeUUID(p.cameraId);
+            buf.writeUtf(p.tag == null ? "" : p.tag);
+        }
         buf.writeBoolean(p.hasAttach);
         if (p.hasAttach) {
             buf.writeUUID(p.subId);
@@ -61,13 +66,15 @@ public record FollowCameraPayload(
     }
 
     private static FollowCameraPayload read(FriendlyByteBuf buf) {
-        UUID id = buf.readBoolean() ? buf.readUUID() : null;
+        boolean hasId = buf.readBoolean();
+        UUID id = hasId ? buf.readUUID() : null;
+        String tag = hasId ? buf.readUtf() : "";
         if (!buf.readBoolean()) {
-            return new FollowCameraPayload(id, false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            return new FollowCameraPayload(id, tag, false, null, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     CameraAnchorEntity.DEFAULT_FOV);
         }
         return new FollowCameraPayload(
-                id, true, buf.readUUID(),
+                id, tag, true, buf.readUUID(),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(),
@@ -96,7 +103,7 @@ public record FollowCameraPayload(
                 CameraAimClient.reset();
             }
             CameraOrientState.clear();
-            CameraFollowClient.setFollow(payload.cameraId());
+            CameraFollowClient.setFollow(payload.cameraId(), payload.tag());
             if (payload.hasAttach()) {
                 CameraFollowClient.applyAttach(
                         payload.subId(),

@@ -110,6 +110,38 @@ public class CameraAnchorClientHandler {
         }
     }
 
+    @SubscribeEvent
+    public static void onRenderGuiLayerPost(RenderGuiLayerEvent.Post event) {
+        if (!ActiveView.isOverriding() || !VanillaGuiLayers.HOTBAR.equals(event.getName())) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.options.hideGui) {
+            return;
+        }
+
+        boolean replay = ReplayCompat.isInReplay();
+        String camName = replay ? ReplayFollowCache.activeTag() : CameraFollowClient.tag();
+        if (camName.isEmpty() && !replay && CameraFollowClient.getFollow() != null) {
+            camName = CameraCatalog.nameOf(CameraFollowClient.getFollow());
+        }
+        if (camName.isEmpty()) {
+            camName = "camera";
+        }
+
+        boolean unlocked = CameraAimClient.isUnlocked();
+        String status = unlocked ? "UNLOCKED" : "LOCKED";
+        int statusColor = unlocked ? 0xFFFF55 : 0x55FF55;
+        String text = String.format("CAM: %s  |  FOV: %.0f°  |  ", camName, ActiveView.fov());
+
+        var font = mc.font;
+        var gfx = event.getGuiGraphics();
+        int x = 8;
+        int y = 8;
+        gfx.drawString(font, text, x, y, 0xFFFFFF, true);
+        gfx.drawString(font, status, x + font.width(text), y, statusColor, true);
+    }
+
     public static ClientSubLevel findClientSubLevel(UUID id) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return null;

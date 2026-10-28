@@ -7,6 +7,7 @@ import java.util.UUID;
 
 public final class CameraFollowClient {
     private static UUID followId = null;
+    private static String tag = "";
 
     private static boolean captured = false;
     private static UUID subId;
@@ -16,7 +17,12 @@ public final class CameraFollowClient {
     private CameraFollowClient() {}
 
     public static void setFollow(@Nullable UUID id) {
+        setFollow(id, "");
+    }
+
+    public static void setFollow(@Nullable UUID id, String tag) {
         followId = id;
+        CameraFollowClient.tag = tag == null ? "" : tag;
         if (id == null) clearCapture();
     }
 
@@ -25,8 +31,13 @@ public final class CameraFollowClient {
         return followId;
     }
 
+    public static String tag() {
+        return tag;
+    }
+
     public static void clear() {
         followId = null;
+        tag = "";
         clearCapture();
     }
 
@@ -37,6 +48,9 @@ public final class CameraFollowClient {
 
     public static void captureFrom(CameraAnchorEntity a) {
         followId = a.getUUID();
+        if (!a.getCamTag().isEmpty()) {
+            tag = a.getCamTag();
+        }
         subId = a.getAttachedSubLevelId();
         lx = a.getLocalX(); ly = a.getLocalY(); lz = a.getLocalZ();
         ox = a.getOffsetX(); oy = a.getOffsetY(); oz = a.getOffsetZ();

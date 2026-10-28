@@ -13,7 +13,8 @@ public final class ModNetwork {
         // "3": FOV on Follow/CameraPose payloads, C2S ExitViewPayload
         // "4": C2S CycleCameraPayload
         // "5": C2S SaveCameraAimPayload
-        PayloadRegistrar registrar = event.registrar(SableCameraMod.MOD_ID).versioned("5");
+        // "6": tag string on FollowCameraPayload
+        PayloadRegistrar registrar = event.registrar(SableCameraMod.MOD_ID).versioned("6");
 
         registrar.playToClient(
                 FollowCameraPayload.TYPE,
