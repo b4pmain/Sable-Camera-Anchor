@@ -1,19 +1,17 @@
 package dev.bapmain.sablecamera.client;
 
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
-import dev.ryanhcode.sable.Sable;
+import dev.bapmain.sablecamera.math.CameraMath;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
-import dev.ryanhcode.sable.companion.math.Pose3dc;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.ViewportEvent;
 import org.joml.Vector3d;
 
 import java.util.UUID;
@@ -21,55 +19,9 @@ import java.util.UUID;
 @EventBusSubscriber(modid = "sablecamera", value = Dist.CLIENT)
 public class CameraAnchorClientHandler {
 
-    @SubscribeEvent
-    public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
-        Minecraft mc = Minecraft.getInstance();
-        Entity cameraEntity = mc.getCameraEntity();
-
-        if (!(cameraEntity instanceof CameraAnchorEntity anchor)) {
-            return;
-        }
-
-        // Correct client-side lookup by position
-        var clientSub = Sable.HELPER.getContainingClient(anchor.position());
-        if (clientSub == null) {
-            return;
-        }
-
-        // Get the smooth render pose
-        Pose3dc pose;
-        try {
-            pose = clientSub.renderPose();
-        } catch (Exception e) {
-            return;
-        }
-
-        if (pose == null) {
-            return;
-        }
-
-        // ===== Orientation =====
-        float yawRad = anchor.getLocalYaw() * ((float) Math.PI / 180.0f);
-        float pitchRad = anchor.getLocalPitch() * ((float) Math.PI / 180.0f);
-
-        // Local look vector (Minecraft convention)
-        double lx = -Math.sin(yawRad) * Math.cos(pitchRad);
-        double ly = -Math.sin(pitchRad);
-        double lz =  Math.cos(yawRad) * Math.cos(pitchRad);
-
-        Vector3d localLook = new Vector3d(lx, ly, lz);
-
-        // Transform into world space
-        pose.transformNormal(localLook);
-
-        double horizontal = Math.sqrt(localLook.x * localLook.x + localLook.z * localLook.z);
-
-        float worldYaw = (float) (Mth.atan2(-localLook.x, localLook.z) * (180.0 / Math.PI));
-        float worldPitch = (float) (Mth.atan2(-localLook.y, horizontal) * (180.0 / Math.PI));
-
-        event.setYaw(worldYaw);
-        event.setPitch(worldPitch);
-    }
+    // Orientation override for spectated anchors used to live here (ComputeCameraAngles).
+    // It was redundant: that event fires inside Camera#setup, before CameraMixin's TAIL
+    // injection, which fully overrides the pose anyway.
 
     public static void snapToRenderPose(CameraAnchorEntity anchor) {
         UUID subId = anchor.getAttachedSubLevelId();
@@ -81,21 +33,35 @@ public class CameraAnchorClientHandler {
         var pose = sub.renderPose();
         if (pose == null) return;
 
-        var rp = pose.rotationPoint();
-        Vector3d localPos = new Vector3d(
-                rp.x() + anchor.getLocalX() + anchor.getOffsetX(),
-                rp.y() + anchor.getLocalY() + anchor.getOffsetY(),
-                rp.z() + anchor.getLocalZ() + anchor.getOffsetZ()
-        );
-        pose.transformPosition(localPos);
+        Vector3d worldPos = CameraMath.worldPosition(pose,
+                anchor.getLocalX(), anchor.getLocalY(), anchor.getLocalZ(),
+                anchor.getOffsetX(), anchor.getOffsetY(), anchor.getOffsetZ());
 
-        if (Math.abs(localPos.x) < 1.0e6
-                && Math.abs(localPos.y) < 1.0e6
-                && Math.abs(localPos.z) < 1.0e6) {
-            anchor.setPos(localPos.x, localPos.y, localPos.z);
+        if (CameraMath.isSane(worldPos)) {
+            anchor.setPos(worldPos.x, worldPos.y, worldPos.z);
         }
     }
 
+    /**
+     * Live view state is static client-side. Without this, leaving mid-view and rejoining
+     * kept the camera override active (player back in survival but rendering from the camera).
+     * ReplayFollowCache is intentionally kept: it must survive ReplayMod timeline jumps.
+     */
+    @SubscribeEvent
+    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        resetLiveView();
+    }
+
+    @SubscribeEvent
+    public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
+        resetLiveView();
+    }
+
+    public static void resetLiveView() {
+        CameraFollowClient.clear();
+        CameraPoseClient.clear();
+        CameraOrientState.clear();
+    }
     public static ClientSubLevel findClientSubLevel(UUID id) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return null;

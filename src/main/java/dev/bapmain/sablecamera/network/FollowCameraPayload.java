@@ -84,6 +84,8 @@ public record FollowCameraPayload(
                 return;
             }
 
+            // new target → don't smooth from the previous camera's orientation
+            CameraOrientState.clear();
             CameraFollowClient.setFollow(payload.cameraId());
             if (payload.hasAttach()) {
                 CameraFollowClient.applyAttach(

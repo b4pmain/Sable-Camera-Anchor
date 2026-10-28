@@ -2,19 +2,24 @@ package dev.bapmain.sablecamera.mixin;
 
 import dev.bapmain.sablecamera.client.*;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
+import dev.bapmain.sablecamera.math.CameraMath;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
+import dev.ryanhcode.sable.companion.math.Pose3dc;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockGetter;
 import org.joml.Quaterniond;
-import org.joml.Quaterniondc;
+import org.joml.Quaternionf;
+import org.joml.Quaternionfc;
 import org.joml.Vector3d;
+import org.joml.Vector3f;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -25,14 +30,19 @@ import java.util.UUID;
 public abstract class CameraMixin {
 
     @Shadow protected abstract void setPosition(double x, double y, double z);
-    @Shadow protected abstract void setRotation(float yRot, float xRot, float roll);
 
-    private static float unwrap(float current, float last) {
-        float delta = current - last;
-        while (delta > 180.0f) delta -= 360.0f;
-        while (delta < -180.0f) delta += 360.0f;
-        return last + delta;
-    }
+    // Camera orientation is written directly as a quaternion: GameRenderer builds the view
+    // matrix from Camera#rotation(), so there is no yaw/pitch/roll round trip (no gimbal
+    // lock / ±90° pitch snap). xRot/yRot/roll are kept roughly in sync for other readers.
+    @Shadow @Final private Quaternionf rotation;
+    @Shadow @Final private Vector3f forwards;
+    @Shadow @Final private Vector3f up;
+    @Shadow @Final private Vector3f left;
+    @Shadow private float xRot;
+    @Shadow private float yRot;
+    @Shadow private float roll;
+
+    @Unique private static final float[] sablecamera$euler = new float[3];
 
     @Inject(method = "setup", at = @At("TAIL"))
     private void sablecamera$overrideForAnchor(BlockGetter level, Entity entity,
@@ -41,6 +51,7 @@ public abstract class CameraMixin {
 
         Minecraft mc = Minecraft.getInstance();
         boolean replay = ReplayCompat.isInReplay();
+        boolean liveSelf = !replay && entity == mc.player;
 
         CameraAnchorEntity anchor = null;
 
@@ -48,14 +59,14 @@ public abstract class CameraMixin {
             anchor = direct;
             CameraCatalog.remember(direct);
             ReplayFollowCache.capture(direct);
-        } else if (!replay && entity == mc.player) {
+        } else if (liveSelf) {
             anchor = resolveAnchor(entity);
         }
 
-        UUID subId = null;
-        float lx = 0, ly = 0, lz = 0, ox = 0, oy = 0, oz = 0;
-        float lp = 0, lyaw = 0, lr = 0;
-        int orientKey = 0;
+        UUID subId;
+        float lx, ly, lz, ox, oy, oz;
+        float lp, lyaw, lr;
+        int orientKey;
 
         if (anchor != null) {
             CameraFollowClient.captureFrom(anchor);
@@ -101,31 +112,13 @@ public abstract class CameraMixin {
             lr = ReplayFollowCache.roll();
             orientKey = Integer.MAX_VALUE;
 
-        } else if (!replay && entity == mc.player && CameraPoseClient.isActive()) {
-            this.setPosition(
-                    CameraPoseClient.x(partialTick),
-                    CameraPoseClient.y(partialTick),
-                    CameraPoseClient.z(partialTick));
-            this.setRotation(
-                    CameraPoseClient.yaw(partialTick),
-                    CameraPoseClient.pitch(partialTick),
-                    CameraPoseClient.roll(partialTick));
-            return;
         } else {
+            sablecamera$applyServerPoseIfLive(liveSelf, partialTick);
             return;
         }
 
         if (subId == null) {
-            if (!replay && entity == mc.player && CameraPoseClient.isActive()) {
-                this.setPosition(
-                        CameraPoseClient.x(partialTick),
-                        CameraPoseClient.y(partialTick),
-                        CameraPoseClient.z(partialTick));
-                this.setRotation(
-                        CameraPoseClient.yaw(partialTick),
-                        CameraPoseClient.pitch(partialTick),
-                        CameraPoseClient.roll(partialTick));
-            }
+            sablecamera$applyServerPoseIfLive(liveSelf, partialTick);
             return;
         }
 
@@ -142,101 +135,55 @@ public abstract class CameraMixin {
         }
 
         if (clientSub == null) {
-            if (!replay && entity == mc.player && CameraPoseClient.isActive()) {
-                this.setPosition(
-                        CameraPoseClient.x(partialTick),
-                        CameraPoseClient.y(partialTick),
-                        CameraPoseClient.z(partialTick));
-                this.setRotation(
-                        CameraPoseClient.yaw(partialTick),
-                        CameraPoseClient.pitch(partialTick),
-                        CameraPoseClient.roll(partialTick));
-            }
+            sablecamera$applyServerPoseIfLive(liveSelf, partialTick);
             return;
         }
 
-        Object poseObj;
+        Pose3dc pose;
         try {
-            poseObj = clientSub.renderPose();
+            pose = clientSub.renderPose();
         } catch (Exception e) {
-            poseObj = null;
+            pose = null;
         }
-        if (poseObj == null) {
-            if (!replay && entity == mc.player && CameraPoseClient.isActive()) {
-                this.setPosition(
-                        CameraPoseClient.x(partialTick),
-                        CameraPoseClient.y(partialTick),
-                        CameraPoseClient.z(partialTick));
-                this.setRotation(
-                        CameraPoseClient.yaw(partialTick),
-                        CameraPoseClient.pitch(partialTick),
-                        CameraPoseClient.roll(partialTick));
-            }
+        if (pose == null) {
+            sablecamera$applyServerPoseIfLive(liveSelf, partialTick);
             return;
         }
 
-        var st = CameraOrientState.get(orientKey);
-        var pose = (dev.ryanhcode.sable.companion.math.Pose3dc) poseObj;
-        var rp = pose.rotationPoint();
+        Vector3d worldPos = CameraMath.worldPosition(pose, lx, ly, lz, ox, oy, oz);
+        this.setPosition(worldPos.x, worldPos.y, worldPos.z);
 
-        Vector3d localPos = new Vector3d(
-                rp.x() + lx + ox,
-                rp.y() + ly + oy,
-                rp.z() + lz + oz
-        );
-        pose.transformPosition(localPos);
-        this.setPosition(localPos.x, localPos.y, localPos.z);
+        Quaterniond worldRot = CameraMath.worldRotation(pose.orientation(), lp, lyaw, lr);
+        Quaternionf target = CameraMath.toMinecraftCamera(worldRot, new Quaternionf());
 
-        Quaterniondc shipRot = pose.orientation();
-        Quaterniond localCam = new Quaterniond()
-                .rotateY(Math.toRadians(-lyaw))
-                .rotateX(Math.toRadians(lp))
-                .rotateZ(Math.toRadians(lr));
-        Quaterniond worldRot = new Quaterniond(shipRot).mul(localCam);
+        sablecamera$applyRotation(CameraOrientState.get(orientKey).smoothToward(target));
+    }
 
-        Vector3d forward = new Vector3d(0.0, 0.0, 1.0);
-        Vector3d up = new Vector3d(0.0, 1.0, 0.0);
-        worldRot.transform(forward);
-        worldRot.transform(up);
-
-        double horizontal = Math.sqrt(forward.x * forward.x + forward.z * forward.z);
-        float yaw = (float) Math.toDegrees(Math.atan2(-forward.x, forward.z));
-        float pitch = horizontal < 1.0e-5
-                ? st.pitch
-                : (float) Math.toDegrees(Math.atan2(-forward.y, horizontal));
-
-        Vector3d worldUp = new Vector3d(0.0, 1.0, 0.0);
-        Vector3d right = new Vector3d();
-        forward.cross(worldUp, right);
-
-        float roll;
-        if (right.lengthSquared() < 1.0e-4) {
-            roll = st.roll;
-        } else {
-            right.normalize();
-            Vector3d expectedUp = new Vector3d();
-            right.cross(forward, expectedUp);
-            expectedUp.normalize();
-            roll = (float) Math.toDegrees(Math.atan2(right.dot(up), expectedUp.dot(up)));
+    /** Far-view fallback: server-streamed world pose (live view of the local player only). */
+    @Unique
+    private void sablecamera$applyServerPoseIfLive(boolean liveSelf, float partialTick) {
+        if (!liveSelf || !CameraPoseClient.isActive()) {
+            return;
         }
+        this.setPosition(
+                CameraPoseClient.x(partialTick),
+                CameraPoseClient.y(partialTick),
+                CameraPoseClient.z(partialTick));
+        sablecamera$applyRotation(CameraPoseClient.rotation(partialTick));
+    }
 
-        yaw = unwrap(yaw, st.yaw);
-        pitch = unwrap(pitch, st.pitch);
-        roll = unwrap(roll, st.roll);
+    /** Writes a Minecraft-frame rotation into the camera (mirrors Camera#setRotation). */
+    @Unique
+    private void sablecamera$applyRotation(Quaternionfc q) {
+        this.rotation.set(q);
+        q.transform(0.0f, 0.0f, -1.0f, this.forwards);
+        q.transform(0.0f, 1.0f, 0.0f, this.up);
+        q.transform(-1.0f, 0.0f, 0.0f, this.left);
 
-        yaw = st.yaw + (yaw - st.yaw) * 0.7f;
-        pitch = st.pitch + (pitch - st.pitch) * 0.25f;
-        roll = st.roll + (roll - st.roll) * 0.7f;
-
-        st.yaw = yaw;
-        st.pitch = pitch;
-        st.roll = roll;
-
-        yaw = Mth.wrapDegrees(yaw);
-        pitch = Mth.clamp(pitch, -90.0f, 90.0f);
-        roll = Mth.wrapDegrees(roll);
-
-        this.setRotation(yaw, pitch, roll);
+        CameraMath.toEuler(q, sablecamera$euler);
+        this.yRot = sablecamera$euler[0];
+        this.xRot = sablecamera$euler[1];
+        this.roll = sablecamera$euler[2];
     }
 
     private static CameraAnchorEntity resolveAnchor(Entity cameraEntity) {

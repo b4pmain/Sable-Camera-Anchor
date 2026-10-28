@@ -8,11 +8,17 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.joml.Quaternionf;
+import org.joml.Quaternionfc;
 
+/**
+ * Server → client world pose of the followed camera (far-view fallback).
+ * Rotation is a {@code Camera#rotation()}-compatible quaternion (see CameraMath).
+ */
 public record CameraPosePayload(
         boolean active,
         double x, double y, double z,
-        float yaw, float pitch, float roll
+        float qx, float qy, float qz, float qw
 ) implements CustomPacketPayload {
 
     public static final Type<CameraPosePayload> TYPE =
@@ -22,12 +28,11 @@ public record CameraPosePayload(
             StreamCodec.of(CameraPosePayload::write, CameraPosePayload::read);
 
     public static CameraPosePayload clear() {
-        return new CameraPosePayload(false, 0, 0, 0, 0, 0, 0);
+        return new CameraPosePayload(false, 0, 0, 0, 0, 0, 0, 1);
     }
 
-    public static CameraPosePayload of(double x, double y, double z,
-                                       float yaw, float pitch, float roll) {
-        return new CameraPosePayload(true, x, y, z, yaw, pitch, roll);
+    public static CameraPosePayload of(double x, double y, double z, Quaternionfc rot) {
+        return new CameraPosePayload(true, x, y, z, rot.x(), rot.y(), rot.z(), rot.w());
     }
 
     private static void write(FriendlyByteBuf buf, CameraPosePayload p) {
@@ -36,9 +41,10 @@ public record CameraPosePayload(
             buf.writeDouble(p.x);
             buf.writeDouble(p.y);
             buf.writeDouble(p.z);
-            buf.writeFloat(p.yaw);
-            buf.writeFloat(p.pitch);
-            buf.writeFloat(p.roll);
+            buf.writeFloat(p.qx);
+            buf.writeFloat(p.qy);
+            buf.writeFloat(p.qz);
+            buf.writeFloat(p.qw);
         }
     }
 
@@ -46,9 +52,9 @@ public record CameraPosePayload(
         if (!buf.readBoolean()) {
             return clear();
         }
-        return of(
+        return new CameraPosePayload(true,
                 buf.readDouble(), buf.readDouble(), buf.readDouble(),
-                buf.readFloat(), buf.readFloat(), buf.readFloat()
+                buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat()
         );
     }
 
@@ -67,7 +73,7 @@ public record CameraPosePayload(
                 CameraPoseClient.clear();
             } else {
                 CameraPoseClient.set(payload.x, payload.y, payload.z,
-                        payload.yaw, payload.pitch, payload.roll);
+                        new Quaternionf(payload.qx, payload.qy, payload.qz, payload.qw).normalize());
             }
         });
     }

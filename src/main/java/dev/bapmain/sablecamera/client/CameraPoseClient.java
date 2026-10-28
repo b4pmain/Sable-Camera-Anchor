@@ -1,26 +1,35 @@
 package dev.bapmain.sablecamera.client;
 
 import net.minecraft.util.Mth;
+import org.joml.Quaternionf;
+import org.joml.Quaternionfc;
 
+/**
+ * Far-view fallback: world pose streamed by the server (CameraPosePublisher, 20 Hz) when the
+ * sub-level isn't available client-side. Rotation is a {@code Camera#rotation()} quaternion
+ * and is slerped (no Euler interpolation → no pole flips).
+ */
 public final class CameraPoseClient {
     private static boolean active = false;
 
     private static double x0, y0, z0, x1, y1, z1;
-    private static float yaw0, pitch0, roll0, yaw1, pitch1, roll1;
+    private static final Quaternionf rot0 = new Quaternionf();
+    private static final Quaternionf rot1 = new Quaternionf();
+    private static final Quaternionf out = new Quaternionf();
     private static long t0ms, t1ms;
 
-    public static void set(double x, double y, double z, float yaw, float pitch, float roll) {
+    public static void set(double x, double y, double z, Quaternionfc rot) {
         if (active) {
             x0 = x1; y0 = y1; z0 = z1;
-            yaw0 = yaw1; pitch0 = pitch1; roll0 = roll1;
+            rot0.set(rot1);
             t0ms = t1ms;
         } else {
             x0 = x; y0 = y; z0 = z;
-            yaw0 = yaw; pitch0 = pitch; roll0 = roll;
+            rot0.set(rot);
             t0ms = System.currentTimeMillis();
         }
         x1 = x; y1 = y; z1 = z;
-        yaw1 = yaw; pitch1 = pitch; roll1 = roll;
+        rot1.set(rot);
         t1ms = System.currentTimeMillis();
         active = true;
     }
@@ -33,14 +42,10 @@ public final class CameraPoseClient {
     public static double y(float partial) { return lerp(y0, y1, alpha(partial)); }
     public static double z(float partial) { return lerp(z0, z1, alpha(partial)); }
 
-    public static float yaw(float partial) {
-        return lerpAngle(yaw0, yaw1, (float) alpha(partial));
-    }
-    public static float pitch(float partial) {
-        return (float) lerp(pitch0, pitch1, alpha(partial));
-    }
-    public static float roll(float partial) {
-        return lerpAngle(roll0, roll1, (float) alpha(partial));
+    /** Interpolated rotation (no extrapolation past the latest packet for rotation). */
+    public static Quaternionfc rotation(float partial) {
+        float a = (float) Math.min(alpha(partial), 1.0);
+        return rot0.slerp(rot1, a, out);
     }
 
     private static double alpha(float partialTick) {
@@ -53,10 +58,5 @@ public final class CameraPoseClient {
 
     private static double lerp(double a, double b, double t) {
         return a + (b - a) * t;
-    }
-
-    private static float lerpAngle(float a, float b, float t) {
-        float d = Mth.wrapDegrees(b - a);
-        return a + d * t;
     }
 }

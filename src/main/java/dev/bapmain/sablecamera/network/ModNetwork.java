@@ -9,7 +9,8 @@ public final class ModNetwork {
     private ModNetwork() {}
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(SableCameraMod.MOD_ID).versioned("1");
+        // "2": CameraPosePayload carries a quaternion instead of yaw/pitch/roll
+        PayloadRegistrar registrar = event.registrar(SableCameraMod.MOD_ID).versioned("2");
 
         registrar.playToClient(
                 FollowCameraPayload.TYPE,

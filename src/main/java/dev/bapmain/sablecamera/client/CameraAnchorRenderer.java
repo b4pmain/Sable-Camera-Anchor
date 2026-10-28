@@ -2,8 +2,8 @@ package dev.bapmain.sablecamera.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.math.Axis;
 import dev.bapmain.sablecamera.entity.CameraAnchorEntity;
+import dev.bapmain.sablecamera.math.CameraMath;
 import dev.ryanhcode.sable.api.sublevel.ClientSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ClientSubLevel;
@@ -17,7 +17,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.AABB;
 import org.joml.Matrix4f;
 import org.joml.Quaterniond;
-import org.joml.Quaterniondc;
+import org.joml.Quaternionf;
 import org.joml.Vector3d;
 
 import java.util.UUID;
@@ -41,13 +41,12 @@ public class CameraAnchorRenderer extends EntityRenderer<CameraAnchorEntity> {
             return;
         }
 
-        // Default: entity position
+        // Default: entity position, local angles only
         double drawX = entity.getX();
         double drawY = entity.getY();
         double drawZ = entity.getZ();
-        float yaw = entity.getLocalYaw();
-        float pitch = entity.getLocalPitch();
-        float roll = entity.getLocalRoll();
+        Quaterniond frameRot = CameraMath.localRotation(
+                entity.getLocalPitch(), entity.getLocalYaw(), entity.getLocalRoll());
 
         // Apply sub-level transform if attached
         UUID subId = entity.getAttachedSubLevelId();
@@ -56,48 +55,16 @@ public class CameraAnchorRenderer extends EntityRenderer<CameraAnchorEntity> {
             if (clientSub != null) {
                 var pose = clientSub.renderPose();
                 if (pose != null) {
-                    var rp = pose.rotationPoint();
-                    Vector3d localPos = new Vector3d(
-                            rp.x() + entity.getLocalX() + entity.getOffsetX(),
-                            rp.y() + entity.getLocalY() + entity.getOffsetY(),
-                            rp.z() + entity.getLocalZ() + entity.getOffsetZ()
-                    );
-                    pose.transformPosition(localPos);
-                    drawX = localPos.x;
-                    drawY = localPos.y;
-                    drawZ = localPos.z;
+                    Vector3d worldPos = CameraMath.worldPosition(pose,
+                            entity.getLocalX(), entity.getLocalY(), entity.getLocalZ(),
+                            entity.getOffsetX(), entity.getOffsetY(), entity.getOffsetZ());
+                    drawX = worldPos.x;
+                    drawY = worldPos.y;
+                    drawZ = worldPos.z;
 
-                    // Same orientation math as the camera mixin
-                    Quaterniondc shipRot = pose.orientation();
-                    Quaterniond localCam = new Quaterniond()
-                            .rotateY(Math.toRadians(-entity.getLocalYaw()))
-                            .rotateX(Math.toRadians(entity.getLocalPitch()))
-                            .rotateZ(Math.toRadians(entity.getLocalRoll()));
-                    Quaterniond worldRot = new Quaterniond(shipRot).mul(localCam);
-
-                    Vector3d forward = new Vector3d(0.0, 0.0, 1.0);
-                    Vector3d up = new Vector3d(0.0, 1.0, 0.0);
-                    worldRot.transform(forward);
-                    worldRot.transform(up);
-
-                    double horizontal = Math.sqrt(forward.x * forward.x + forward.z * forward.z);
-                    yaw = (float) Math.toDegrees(Math.atan2(-forward.x, forward.z));
-                    pitch = (float) Math.toDegrees(Math.atan2(-forward.y, horizontal));
-
-                    Vector3d worldUp = new Vector3d(0.0, 1.0, 0.0);
-                    Vector3d right = new Vector3d();
-                    forward.cross(worldUp, right);
-                    if (right.lengthSquared() > 1.0e-4) {
-                        right.normalize();
-                        Vector3d expectedUp = new Vector3d();
-                        right.cross(forward, expectedUp);
-                        expectedUp.normalize();
-                        double dot = expectedUp.dot(up);
-                        double det = right.dot(up);
-                        roll = (float) Math.toDegrees(Math.atan2(det, dot));
-                    } else {
-                        roll = 0.0f;
-                    }
+                    // Same orientation math as the camera mixin (camera frame: cone along +Z)
+                    frameRot = CameraMath.worldRotation(pose.orientation(),
+                            entity.getLocalPitch(), entity.getLocalYaw(), entity.getLocalRoll());
                 }
             }
         }
@@ -105,10 +72,8 @@ public class CameraAnchorRenderer extends EntityRenderer<CameraAnchorEntity> {
         poseStack.pushPose();
         poseStack.translate(drawX - entity.getX(), drawY - entity.getY(), drawZ - entity.getZ());
 
-        // Apply camera orientation (Minecraft: Y then X then Z)
-        poseStack.mulPose(Axis.YP.rotationDegrees(-yaw));
-        poseStack.mulPose(Axis.XP.rotationDegrees(pitch));
-        poseStack.mulPose(Axis.ZP.rotationDegrees(roll));
+        // Apply camera orientation directly as a quaternion (no Euler round trip)
+        poseStack.mulPose(new Quaternionf().set(frameRot));
 
         VertexConsumer vc = buffer.getBuffer(RenderType.lines());
         Matrix4f mat = poseStack.last().pose();
